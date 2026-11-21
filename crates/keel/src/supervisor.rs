@@ -210,6 +210,8 @@ struct State {
     current: Option<Proc>,
     /// (binary, sha) that ran before the current one.
     previous: Option<(PathBuf, String)>,
+    /// (binary, sha, reason) of the last binary rolled back automatically.
+    rejected: Option<(PathBuf, String, String)>,
 }
 
 struct Sup {
@@ -320,22 +322,31 @@ impl Sup {
         self.check(&bin, &["config", "validate"]).await?;
         say.step("migrate", "additive migrations with the new binary".into());
         self.check(&bin, &["migrate", "--apply"]).await?;
+        let previous_before = st.previous.clone();
         self.switch(&mut st, &bin, &sha, say).await?;
+        self.record(json!({ "action": "swap", "from": from, "to": sha }));
         if let Some(reason) = self.watch(&mut st, say).await {
             say.step("rollback", reason.clone());
             let Some((prev, prev_sha)) = st.previous.clone() else {
+                st.rejected = Some((bin, sha.clone(), reason.clone()));
+                self.record(
+                    json!({ "action": "watch", "sha": sha, "result": "unhealthy", "reason": reason }),
+                );
                 bail!("{reason}; no previous binary to roll back to");
             };
             self.switch(&mut st, &prev, &prev_sha, say).await?;
-            st.previous = Some((bin, sha.clone()));
+            // The broken binary must never become the rollback target.
+            st.previous = previous_before;
+            st.rejected = Some((bin, sha.clone(), reason.clone()));
             let r = json!({ "action": "rollback", "from": sha, "to": prev_sha, "reason": reason, "automatic": true });
-            self.record(r.clone());
+            self.record(r);
             return Ok(
                 json!({ "ok": false, "rolled_back": true, "reason": reason, "running": prev_sha, "failed": sha }),
             );
         }
-        let r = json!({ "action": "swap", "from": from, "to": sha });
-        self.record(r);
+        if !self.watch.is_zero() {
+            self.record(json!({ "action": "watch", "sha": sha, "result": "healthy" }));
+        }
         Ok(json!({ "ok": true, "running": sha, "previous": from }))
     }
 
@@ -358,6 +369,7 @@ impl Sup {
                 "ok": true,
                 "running": st.current.as_ref().map(|p| json!({ "pid": p.pid, "sha256": p.sha, "binary": p.bin, "control": p.control })),
                 "previous": st.previous.as_ref().map(|(b, s)| json!({ "sha256": s, "binary": b })),
+                "rejected": st.rejected.as_ref().map(|(b, s, r)| json!({ "sha256": s, "binary": b, "reason": r })),
                 "watch_secs": self.watch.as_secs(),
             }),
             Err(_) => json!({ "ok": true, "busy": true }),
@@ -443,6 +455,7 @@ pub async fn run(config: &Path, binary: Option<PathBuf>, watch_secs: u64) -> Res
         state: Mutex::new(State {
             current: Some(first),
             previous: None,
+            rejected: None,
         }),
         _listener: listener,
     });
@@ -539,10 +552,18 @@ pub async fn send(out: Out, config: &Path, cmd: Value) -> Result<()> {
                     short(r["sha256"].as_str().unwrap_or_default()),
                     r["binary"].as_str().unwrap_or_default()
                 );
-                if let Some(p) = v["previous"]["sha256"].as_str() {
-                    t.push_str(&format!(
+                match v["previous"]["sha256"].as_str() {
+                    Some(p) => t.push_str(&format!(
                         "\nprevious {} (keel rollback goes back to it)",
                         short(p)
+                    )),
+                    None => t.push_str("\nno previous binary to roll back to"),
+                }
+                if let Some(r) = v["rejected"]["sha256"].as_str() {
+                    t.push_str(&format!(
+                        "\nrejected {} (rolled back automatically: {})",
+                        short(r),
+                        v["rejected"]["reason"].as_str().unwrap_or_default()
                     ));
                 }
                 t

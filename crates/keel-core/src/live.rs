@@ -151,6 +151,30 @@ fn yaml_err(e: impl std::fmt::Display) -> LiveError {
     LiveError::Invalid(format!("app.yaml: not valid YAML: {e}"))
 }
 
+/// The newest config version in the audit log, so numbering carries on
+/// across restarts and binary swaps; 0 when there is none.
+async fn last_version(providers: &CapabilityProviders) -> u64 {
+    let Some(sql) = &providers.sql else {
+        return 0;
+    };
+    let rows = sql
+        .query(
+            "SELECT detail FROM keel_audit WHERE action IN ('config.apply', 'plugin.enable', 'plugin.disable', 'plugin.configure') ORDER BY at DESC, id DESC LIMIT 50",
+            &[],
+        )
+        .await
+        .unwrap_or_default();
+    rows.iter()
+        .filter_map(|r| match r.get("detail") {
+            Some(Value::String(d)) => serde_json::from_str::<Value>(d).ok(),
+            Some(v) => Some(v.clone()),
+            None => None,
+        })
+        .filter_map(|d| d["version"].as_u64())
+        .max()
+        .unwrap_or(0)
+}
+
 impl Live {
     /// Starts the first generation from the app.yaml document `source`.
     pub async fn start(
@@ -161,9 +185,10 @@ impl Live {
     ) -> Result<Self, LiveError> {
         let (expanded, origins, host) = build(&source, &registry, &providers, &options).await?;
         let router = host.router();
+        let version = last_version(&providers).await + 1;
         let gen = Gen {
             number: 1,
-            version: 1,
+            version,
             source,
             expanded,
             origins,

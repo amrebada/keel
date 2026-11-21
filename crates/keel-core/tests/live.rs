@@ -288,3 +288,33 @@ async fn admin_api_needs_the_token() {
         .unwrap();
     assert_eq!(r["plugins"][0]["runtime_config"], json!(["message"]));
 }
+
+#[tokio::test]
+async fn version_numbers_survive_a_restart() {
+    let db = std::env::temp_dir().join(format!("keel-live-version-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&db);
+    let url = format!("sqlite://{}?mode=rwc", db.display());
+    let boot = || async {
+        let registry = PluginRegistry::new().register(keel_plugin_ping::Ping::new());
+        let providers = CapabilityProviders {
+            sql: Some(Arc::new(SqlProvider::connect(&url, Some(1)).await.unwrap())),
+            ..Default::default()
+        };
+        let options = HostOptions {
+            secrets: Arc::new(MapSecrets(HashMap::new())),
+            state_file: None,
+        };
+        Live::start_yaml(APP, registry, providers, options).await.unwrap()
+    };
+    let first = boot().await;
+    assert_eq!(first.version(), 1);
+    let c = first
+        .apply_yaml(&APP.replace("one", "two"), "test")
+        .await
+        .unwrap();
+    assert_eq!(c.version, 2);
+    drop(first);
+    let second = boot().await;
+    assert_eq!(second.version(), 3, "numbering carries on after a restart");
+    let _ = std::fs::remove_file(&db);
+}

@@ -73,10 +73,15 @@ impl Admin {
             let mut text = format!("{} ({})", msg, status.as_u16());
             if let Some(list) = v["error"]["issues"].as_array() {
                 for i in list {
+                    let m = i["message"].as_str().unwrap_or_default();
+                    // Skip issues the message already says.
+                    if m.is_empty() || msg.contains(m) {
+                        continue;
+                    }
                     text.push_str(&format!(
                         "\n  - {}: {}",
                         i["path"].as_str().unwrap_or_default(),
-                        i["message"].as_str().unwrap_or_default()
+                        m
                     ));
                 }
             }
@@ -91,9 +96,57 @@ enum Body {
     Text(String),
 }
 
+/// `cli:<user>@<host>` for the audit log.
 fn actor() -> String {
-    let user = std::env::var("USER").unwrap_or_else(|_| "unknown".into());
-    format!("cli:{user}")
+    let from_cmd = |cmd: &str| {
+        std::process::Command::new(cmd)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    let user = ["USER", "LOGNAME", "USERNAME"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+        .or_else(|| from_cmd("whoami"))
+        .unwrap_or_else(|| "unknown".into());
+    let host = ["HOSTNAME", "COMPUTERNAME"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| from_cmd("hostname"));
+    match host {
+        Some(h) => format!("cli:{user}@{h}"),
+        None => format!("cli:{user}"),
+    }
+}
+
+/// Unix seconds as `YYYY-MM-DD HH:MM:SS UTC`.
+fn utc(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} UTC",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
 }
 
 fn summary(c: &Value) -> String {
@@ -212,7 +265,11 @@ pub async fn audit(out: Out, config: &Path, url: Option<&str>, limit: u32) -> Re
         for e in list {
             text.push_str(&format!(
                 "{}  {:<18} {:<20} {}  {}\n",
-                e["at"],
+                e["at"]
+                    .as_i64()
+                    .or_else(|| e["at"].as_str().and_then(|s| s.parse().ok()))
+                    .map(utc)
+                    .unwrap_or_else(|| e["at"].to_string()),
                 e["action"].as_str().unwrap_or_default(),
                 e["target"].as_str().unwrap_or_default(),
                 e["actor"].as_str().unwrap_or_default(),
@@ -225,4 +282,21 @@ pub async fn audit(out: Out, config: &Path, url: Option<&str>, limit: u32) -> Re
     }
     out.success(text.trim_end(), v);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utc_dates() {
+        assert_eq!(utc(0), "1970-01-01 00:00:00 UTC");
+        assert_eq!(utc(951_782_400), "2000-02-29 00:00:00 UTC");
+        assert_eq!(utc(1_795_290_691), "2026-11-21 19:51:31 UTC");
+    }
+
+    #[test]
+    fn actor_names_user() {
+        assert!(actor().starts_with("cli:"));
+    }
 }

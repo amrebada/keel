@@ -167,6 +167,14 @@ async fn swap_and_rollback_under_load() {
     assert!(!ok3, "{r}");
     assert_eq!(r["rolled_back"], true, "{r}");
     assert!(r["reason"].as_str().unwrap().contains("health"), "{r}");
+    let failed_sha = r["failed"].as_str().unwrap().to_string();
+    let (_, st) = run(vec!["status".into()]).await.unwrap();
+    assert_eq!(st["rejected"]["sha256"], failed_sha.as_str(), "{st}");
+    assert_ne!(
+        st["previous"]["sha256"],
+        failed_sha.as_str(),
+        "the broken binary is not a rollback target: {st}"
+    );
 
     tokio::time::sleep(Duration::from_millis(500)).await;
     stop.store(true, Ordering::Relaxed);
@@ -180,5 +188,10 @@ async fn swap_and_rollback_under_load() {
     assert!(
         log.contains("\"action\":\"swap\"") && log.contains("\"automatic\":true"),
         "{log}"
+    );
+    assert_eq!(
+        log.matches("\"action\":\"swap\"").count(),
+        2,
+        "both swaps are recorded: {log}"
     );
 }
