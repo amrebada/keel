@@ -1,0 +1,18 @@
+[package]
+name = "keel"
+description = "Keel: a pluggable Rust backend you configure in YAML"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "keel"
+path = "src/main.rs"
+
+[dependencies]
+keel-core = { path = "../keel-core" }
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,23 @@
+# Sample Keel app. Plugins listed here are recorded but not loaded until
+# their phases ship; phase 1 only boots the host and serves /health.
+app: team-tasks
+server:
+  host: 127.0.0.1
+  port: 8080
+
+providers:
+  db: { use: postgres, url: "${secret:DATABASE_URL}" }
+  cache: { use: memory }
+
+plugins:
+  - use: auth-core@^1
+    config:
+      session: { type: jwt, access_ttl: 15m }
+  - use: rbac@^1
+    config:
+      roles:
+        admin: { permissions: ["*"] }
+        member: { permissions: ["projects:read"] }
+
+routes:
+  /admin/**: { guard: [authenticated, "role:admin"] }
