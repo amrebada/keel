@@ -64,7 +64,24 @@ async fn swap_and_rollback_under_load() {
     )
     .unwrap();
     std::fs::write(dir.join(".env"), "KEEL_ADMIN_TOKEN=swap-test-token\n").unwrap();
-    let good = script(dir, "keel-next", &format!("exec {KEEL} \"$@\""));
+    // The new build: `KEEL_TEST_NEXT_BINARY` when set (e.g. CI builds another
+    // commit), otherwise a copy of this binary with a marker appended, so it
+    // is a separate file with its own sha256, as a real new build would be.
+    let good = dir.join("keel-next");
+    match std::env::var("KEEL_TEST_NEXT_BINARY") {
+        Ok(p) => {
+            std::fs::copy(p, &good).unwrap();
+        }
+        Err(_) => {
+            let mut bytes = std::fs::read(KEEL).unwrap();
+            bytes.extend_from_slice(b"\nkeel-swap-test-next-build\n");
+            std::fs::write(&good, bytes).unwrap();
+        }
+    }
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&good, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let bad = script(
         dir,
         "keel-broken",
@@ -134,6 +151,14 @@ async fn swap_and_rollback_under_load() {
     assert_eq!(r["previous"].as_str().map(|s| s.len()), Some(64), "{r}");
     let (_, after) = run(vec!["status".into()]).await.unwrap();
     assert_ne!(after["running"]["pid"], first_pid, "a new process serves");
+    assert_ne!(
+        after["running"]["sha256"], before["running"]["sha256"],
+        "the new build runs: {after}"
+    );
+    assert_eq!(
+        after["previous"]["sha256"], before["running"]["sha256"],
+        "{after}"
+    );
 
     // A live config change on the new process.
     std::fs::write(
@@ -193,5 +218,31 @@ async fn swap_and_rollback_under_load() {
         log.matches("\"action\":\"swap\"").count(),
         2,
         "both swaps are recorded: {log}"
+    );
+    let (_, audit) = run(vec!["audit".into()]).await.unwrap();
+    let actions: Vec<(String, String)> = audit["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["action"].as_str().unwrap_or_default().to_string(),
+                e["actor"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    let count = |want: &str| actions.iter().filter(|(a, _)| a == want).count();
+    assert_eq!(count("binary.swap"), 2, "swaps are in the audit log: {actions:?}");
+    assert!(
+        actions
+            .iter()
+            .any(|(a, who)| a == "binary.rollback" && who == "supervisor"),
+        "the automatic rollback is in the audit log: {actions:?}"
+    );
+    assert!(
+        actions
+            .iter()
+            .any(|(a, who)| a == "binary.swap" && who.starts_with("cli:")),
+        "a swap names who asked for it: {actions:?}"
     );
 }

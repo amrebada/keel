@@ -219,10 +219,28 @@ struct Sup {
     fd: i32,
     watch: Duration,
     state: Mutex<State>,
+    /// The app's database, for `keel_audit` rows; `None` without a `db`.
+    audit_db: Option<Arc<keel_providers::SqlProvider>>,
     _listener: std::net::TcpListener,
 }
 
 impl Sup {
+    /// Adds a `binary.<action>` row to the app's audit log, next to config
+    /// changes, so `keel audit` shows both.
+    async fn audit(&self, actor: &str, entry: &Value) {
+        let Some(db) = &self.audit_db else { return };
+        let action = format!("binary.{}", entry["action"].as_str().unwrap_or("event"));
+        let target = entry["to"]
+            .as_str()
+            .or(entry["sha"].as_str())
+            .map(short)
+            .unwrap_or("")
+            .to_string();
+        if let Err(e) = keel_core::migrate::audit(db.as_ref(), actor, &action, &target, entry.clone()).await {
+            tracing::warn!(error = %e, "could not write the audit log");
+        }
+    }
+
     fn record(&self, entry: Value) {
         let path = keel_dir(&self.config).join("swaps.jsonl");
         let mut e = entry;
@@ -312,7 +330,7 @@ impl Sup {
         None
     }
 
-    async fn swap(&self, src: &Path, say: &Say) -> Result<Value> {
+    async fn swap(&self, src: &Path, actor: &str, say: &Say) -> Result<Value> {
         let mut st = self.state.lock().await;
         say.step("verify", format!("hashing {}", src.display()));
         let (bin, sha) = store_binary(&self.config, src)?;
@@ -324,7 +342,9 @@ impl Sup {
         self.check(&bin, &["migrate", "--apply"]).await?;
         let previous_before = st.previous.clone();
         self.switch(&mut st, &bin, &sha, say).await?;
-        self.record(json!({ "action": "swap", "from": from, "to": sha }));
+        let entry = json!({ "action": "swap", "from": from, "to": sha });
+        self.audit(actor, &entry).await;
+        self.record(entry);
         if let Some(reason) = self.watch(&mut st, say).await {
             say.step("rollback", reason.clone());
             let Some((prev, prev_sha)) = st.previous.clone() else {
@@ -339,6 +359,7 @@ impl Sup {
             st.previous = previous_before;
             st.rejected = Some((bin, sha.clone(), reason.clone()));
             let r = json!({ "action": "rollback", "from": sha, "to": prev_sha, "reason": reason, "automatic": true });
+            self.audit("supervisor", &r).await;
             self.record(r);
             return Ok(
                 json!({ "ok": false, "rolled_back": true, "reason": reason, "running": prev_sha, "failed": sha }),
@@ -350,7 +371,7 @@ impl Sup {
         Ok(json!({ "ok": true, "running": sha, "previous": from }))
     }
 
-    async fn rollback(&self, say: &Say) -> Result<Value> {
+    async fn rollback(&self, actor: &str, say: &Say) -> Result<Value> {
         let prev = self.state.lock().await.previous.clone();
         let Some((bin, sha)) = prev else {
             bail!("no previous binary to roll back to");
@@ -359,7 +380,9 @@ impl Sup {
         let mut st = self.state.lock().await;
         let from = st.current.as_ref().map(|p| p.sha.clone()).unwrap_or_default();
         self.switch(&mut st, &bin, &sha, say).await?;
-        self.record(json!({ "action": "rollback", "from": from, "to": sha, "automatic": false }));
+        let entry = json!({ "action": "rollback", "from": from, "to": sha, "automatic": false });
+        self.audit(actor, &entry).await;
+        self.record(entry);
         Ok(json!({ "ok": true, "running": sha, "previous": from }))
     }
 
@@ -375,6 +398,23 @@ impl Sup {
             Err(_) => json!({ "ok": true, "busy": true }),
         }
     }
+}
+
+/// The app's `db` provider, if it has one, opened with the app's secrets.
+async fn audit_db(config: &Path) -> Option<Arc<keel_providers::SqlProvider>> {
+    let secrets = crate::secrets_for(config).await.ok()?;
+    let app = keel_core::AppConfig::load_file(config, secrets.as_ref()).ok()?;
+    let url = app
+        .providers
+        .get("db")?
+        .settings
+        .get("url")?
+        .as_str()?
+        .to_string();
+    keel_providers::SqlProvider::connect(&url, Some(1))
+        .await
+        .ok()
+        .map(Arc::new)
 }
 
 fn short(sha: &str) -> &str {
@@ -410,12 +450,13 @@ async fn handle(sup: Arc<Sup>, stream: UnixStream) {
         return;
     };
     let req: Value = serde_json::from_str(&line).unwrap_or_default();
+    let actor = req["actor"].as_str().unwrap_or("cli:unknown");
     let result = match req["cmd"].as_str() {
         Some("swap") => match req["binary"].as_str() {
-            Some(b) => sup.swap(Path::new(b), &say).await,
+            Some(b) => sup.swap(Path::new(b), actor, &say).await,
             None => Err(anyhow!("swap needs a binary")),
         },
-        Some("rollback") => sup.rollback(&say).await,
+        Some("rollback") => sup.rollback(actor, &say).await,
         Some("status") => Ok(sup.status().await),
         _ => Err(anyhow!("unknown command")),
     };
@@ -457,6 +498,7 @@ pub async fn run(config: &Path, binary: Option<PathBuf>, watch_secs: u64) -> Res
             previous: None,
             rejected: None,
         }),
+        audit_db: audit_db(&config).await,
         _listener: listener,
     });
     let sock = socket_path(&config);

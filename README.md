@@ -158,7 +158,7 @@ keel plugins disable ping
 # edit app.yaml, then reconcile the running server with it:
 keel apply
 keel config pull --write              # write live changes back to app.yaml
-keel audit                            # who changed what, when
+keel audit                            # who changed what, when (config changes, binary swaps and rollbacks)
 ```
 
 A change builds a new set of plugins next to the running one and switches requests over once it has started; in-flight requests finish on the old one. A change that fails validation, a dependency check or a migration leaves the server as it was. Providers, `server` and `secrets` need a binary swap or restart. `keel dev` uses the same mechanism, so saving app.yaml applies it live.
@@ -211,12 +211,15 @@ Plugins send with a template id (`auth.verify`, `auth.reset`, `auth.magic_link`)
 team task API with email and Google sign-in, per-team roles, and protected
 CRUD on Postgres with a Redis cache, written in 45 lines of YAML.
 
-An AI built it twice, once through Keel's MCP server and once from scratch in
-Rust, and both builds passed the same 64-check acceptance test. Compared with
-the from-scratch build, the Keel build:
-- generated **84% fewer tokens** (3.5k against 21.5k);
-- used **41% less context** for the task;
-- finished about **7 times faster**.
+An AI did two tasks, three times each way, once through Keel's MCP server
+and once from scratch in Rust:
+- built the app;
+- made a follow-up change (a new field, a new role and a new resource) to a
+  running app.
+
+Every run passed the same acceptance tests. Compared with from scratch, Keel
+used **86% fewer output tokens for the build** and **41% fewer for the
+change**.
 
 [RESULTS.md](examples/team-tasks/RESULTS.md) has the method and the caveats.
 `crates/keel/tests/team_tasks.rs` runs the same app under `keel supervise`

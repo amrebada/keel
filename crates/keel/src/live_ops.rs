@@ -97,7 +97,7 @@ enum Body {
 }
 
 /// `cli:<user>@<host>` for the audit log.
-fn actor() -> String {
+pub(crate) fn actor() -> String {
     let from_cmd = |cmd: &str| {
         std::process::Command::new(cmd)
             .output()
