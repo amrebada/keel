@@ -1,5 +1,5 @@
 # Sample Keel app. Only compiled-in plugins can be listed here; see them with
-# `keel plugins list`. Auth, roles and the rest arrive in later phases.
+# `keel plugins list`.
 app: team-tasks
 server:
   host: 127.0.0.1
@@ -8,11 +8,20 @@ server:
 providers:
   db: { use: postgres, url: "${secret:DATABASE_URL}" }
   cache: { use: memory }
+  email: { use: console, from: "Team Tasks <noreply@localhost>" }
 
 plugins:
   - use: ping@^0.1
     config:
       message: pong from team-tasks
+  - use: auth-core
+  - use: rbac
+    config:
+      roles:
+        admin: { permissions: ["*"] }
+        owner: { permissions: ["tasks.*", "rbac.manage"], inherits: [member] }
+        member: { permissions: ["tasks.read"] }
 
 routes:
   /admin/**: { guard: [authenticated, "role:admin"] }
+  /ping: { guard: ["rate-limit:60/min"] }

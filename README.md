@@ -6,7 +6,7 @@ Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An 
 
 ## Status
 
-Phase 4 of 8 (auth, setup tracking, migration safety) is done:
+Phase 5 of 8 (roles, business plugins, MCP) is done:
 
 - **Host core (phase 1):** loads and validates `app.yaml`, resolves `${secret:NAME}` from environment variables, runs an event hook bus, serves `/health`.
 - **Plugin contract (phase 2):** plugins are Rust crates compiled into the binary. Each has a `plugin.yaml` manifest, a `config.schema.json`, and a type implementing the `Plugin` trait from `keel-sdk`. The host starts only the plugins `app.yaml` lists, after checking versions, dependencies, capabilities, config and route ownership.
@@ -16,6 +16,9 @@ Phase 4 of 8 (auth, setup tracking, migration safety) is done:
 - **Setup tracking (phase 4):** each plugin lists the setup steps it needs (create an OAuth app, set a secret). `keel setup status` shows what is missing and how to do it, and the routes a missing step blocks answer `503 setup_incomplete` until it is done.
 - **Migration safety (phase 4):** plugin migrations are checked before they run. A migration that drops, renames or deletes is blocked unless you allow it by name, and `keel migrate --apply` backs up the touched tables first.
 - **Secret sources and degrade levels (phase 4):** secrets come from env vars and `.env`, or from HashiCorp Vault. Each plugin and provider has a `degrade_level` (info, warn, error); `/health` answers 503 only when an error-level item is down.
+- **Roles and guards (phase 5):** the `rbac` plugin defines roles in YAML (with inheritance), per-user permission grants and roles scoped to a tenant (`X-Tenant-Id`). `routes:` in `app.yaml` puts guards (`authenticated`, `role:x`, `permission:x`, `owner:param`, `rate-limit:n/period`, `any(...)`, `all(...)`, plugin guards like `plan:pro`) and JSON Schema validation in front of any route.
+- **Business plugins (phase 5):** `billing-stripe` (plans in YAML, Checkout, customer portal, signed webhooks, subscription state per tenant, `plan:x` guard). Email goes through `console`, `smtp`, `resend` or `ses`, with templates in `app.yaml`.
+- **MCP (phase 5):** `keel mcp` lets an AI client search plugins, read, validate and apply `app.yaml`, follow setup steps and read logs without a shell.
 
 ## Try it
 
@@ -71,6 +74,64 @@ curl localhost:8080/auth/oauth/google/start   # 503 setup_incomplete until the G
 
 Manual steps (such as "add the redirect URL in the Google console") are marked with `keel setup done auth-oauth/<step>`, and the state is kept in `.keel/setup.json`.
 
+## Roles, guards and validation
+
+```yaml
+plugins:
+  - use: rbac
+    config:
+      roles:
+        admin: { permissions: ["*"] }
+        owner: { permissions: ["projects.*", "billing.manage", "rbac.manage"], inherits: [member] }
+        member: { permissions: ["projects.read"] }
+      admins: [you@example.com]        # gets admin on signup
+routes:
+  /admin/**: { guard: [authenticated, "role:admin"] }
+  /users/{id}/**: { guard: ["any(role:admin, owner:id)"] }
+  "POST /projects":
+    guard: ["permission:projects.write", "rate-limit:30/min"]
+    validate: { body: { type: object, required: [name], properties: { name: { type: string, minLength: 1 } } } }
+```
+
+Every matching rule applies. Failures answer `401`, `403`, `429`, `402 plan_required` or `422 validation_failed` with a list of issues. Send `X-Tenant-Id: team-1` to use roles granted in that team. `keel config validate` reports a guard whose plugin is missing.
+
+## Billing with Stripe
+
+```yaml
+plugins:
+  - use: billing-stripe
+    config:
+      plans:
+        pro: { price: price_123 }
+        team: { price: price_456, includes: [pro] }
+routes:
+  /reports/**: { guard: [authenticated, "plan:pro"] }
+```
+
+`POST /billing/checkout {"plan":"pro"}` returns a Checkout URL for the caller's tenant; the webhook at `POST /billing/webhook` records the subscription, and `plan:pro` then passes. `keel setup status` walks through the Stripe account, prices and webhook secret (`stripe listen --forward-to localhost:8080/billing/webhook` locally).
+
+## Email
+
+```yaml
+providers:
+  email:
+    use: resend                       # or console, smtp, ses
+    api_key: "${secret:RESEND_API_KEY}"
+    from: "Shop <hello@shop.com>"
+    templates:
+      auth.verify: { subject: "Welcome to Shop", html: "<a href=\"{{link}}\">Confirm your email</a>" }
+```
+
+Plugins send with a template id (`auth.verify`, `auth.reset`, `auth.magic_link`); a template in `app.yaml` replaces the subject, text or html it sets. A real provider adds a `providers/email-domain` setup step for SPF and DKIM.
+
+## Connect an AI client (MCP)
+
+```sh
+claude mcp add keel -- keel mcp -c /path/to/app.yaml
+```
+
+Tools: `search_plugins`, `describe_plugin`, `read_config`, `validate_config`, `apply_config`, `add_plugin`, `setup_status`, `setup_done`, `migrations`, `health`, `logs`. Each returns the same JSON as the CLI's `--json` output. `keel dev` and `keel serve` also log to `.keel/keel.log`, which `logs` reads.
+
 ## Migrations
 
 `keel migrate` prints the plan without changing anything: each pending migration, whether it is additive or destructive, and how many rows it would touch. `keel migrate --apply` runs it. A destructive migration only runs with `--allow-destructive <plugin>/<id>`, and the tables it touches are copied to `keel_backup_<time>_<table>` first. `--apply` exits non-zero while a destructive migration is still blocked. `keel serve` and `keel dev` run additive migrations at start and refuse to start on a blocked one.
@@ -117,10 +178,10 @@ error: app.yaml: 3 problem(s) found
 | --- | --- |
 | `crates/keel-sdk` | What plugins depend on: `Plugin` trait, manifest format, capability traits, hook bus |
 | `crates/keel-sdk/schemas/plugin.schema.json` | JSON Schema for `plugin.yaml` |
-| `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host, setup tracking, migration planner |
+| `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host, route guards and validation, setup tracking, migration planner |
 | `crates/keel-core/schemas/app.schema.json` | JSON Schema for `app.yaml` |
-| `crates/keel-providers` | SQL (sqlx), Redis, in-memory, crypto, HTTP, console email and Vault providers |
-| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`, `setup`, `migrate`) |
+| `crates/keel-providers` | SQL (sqlx), Redis, in-memory, crypto, HTTP, email (console, SMTP, Resend, SES) and Vault providers |
+| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`, `setup`, `migrate`, `mcp`) |
 | `plugins/` | Compiled-in plugins |
 | `examples/app.yaml` | Sample config |
 
