@@ -205,6 +205,24 @@ providers:
 
 Plugins send with a template id (`auth.verify`, `auth.reset`, `auth.magic_link`); a template in `app.yaml` replaces the subject, text or html it sets. A real provider adds a `providers/email-domain` setup step for SPF and DKIM.
 
+## The success test: team tasks
+
+[examples/team-tasks](examples/team-tasks) is the v1 success test. It is a
+team task API with email and Google sign-in, per-team roles, and protected
+CRUD on Postgres with a Redis cache, written in 45 lines of YAML.
+
+An AI built it twice, once through Keel's MCP server and once from scratch in
+Rust, and both builds passed the same 64-check acceptance test. Compared with
+the from-scratch build, the Keel build:
+- generated **84% fewer tokens** (3.5k against 21.5k);
+- used **41% less context** for the task;
+- finished about **7 times faster**.
+
+[RESULTS.md](examples/team-tasks/RESULTS.md) has the method and the caveats.
+`crates/keel/tests/team_tasks.rs` runs the same app under `keel supervise`
+and makes a live change and a binary swap under load, with no failed
+requests.
+
 ## Connect an AI client (MCP)
 
 ```sh

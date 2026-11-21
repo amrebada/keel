@@ -24,6 +24,29 @@ pub fn ai_summary(m: &Manifest) -> String {
         s.push_str(&format!("app.yaml providers: {}\n", providers.join("; ")));
     }
     s.push_str("secrets in config: write \"${secret:NAME}\" (from env or .env beside app.yaml)\n");
+    let reads: Vec<String> = m
+        .setup
+        .iter()
+        .filter_map(|st| {
+            let names: Vec<&str> = st
+                .produces
+                .iter()
+                .filter_map(|p| p.strip_prefix("secret:"))
+                .collect();
+            if names.is_empty() {
+                return None;
+            }
+            let when = st
+                .when
+                .as_deref()
+                .map(|w| format!(" (when {})", w.trim_start_matches("config.")))
+                .unwrap_or_default();
+            Some(format!("{}{when}", names.join(", ")))
+        })
+        .collect();
+    if !reads.is_empty() {
+        s.push_str(&format!("secrets it reads: {}\n", reads.join("; ")));
+    }
     let keys = config_keys(m);
     if keys.is_empty() {
         s.push_str("config: none\n");
