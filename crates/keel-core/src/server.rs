@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, MethodRouter};
 use axum::{Json, Router};
 use keel_sdk::capabilities::{Capability, CapabilityProviders, DegradeLevel};
+use keel_sdk::interfaces::Interfaces;
 use keel_sdk::{Event, HookBus, Plugin};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -20,6 +21,7 @@ use tokio::net::TcpListener;
 use crate::config::AppConfig;
 use crate::migrate::{self, MigrateError};
 use crate::plugins::{self, PluginLoadError, PluginRegistry};
+use crate::routes::{self, RouteRules};
 use crate::secrets::{EnvSecrets, SecretSource};
 use crate::setup::{self, SetupReport, SetupState};
 
@@ -32,6 +34,8 @@ pub enum HostError {
     Migrations(#[from] MigrateError),
     #[error("{0}")]
     State(String),
+    #[error("{}", .0.iter().map(|i| format!("{}: {}", i.path, i.message)).collect::<Vec<_>>().join("; "))]
+    Routes(Vec<keel_sdk::Issue>),
 }
 
 /// How a host finds secrets and setup state.
@@ -71,6 +75,8 @@ pub struct Host {
     options: HostOptions,
     setup: Arc<RwLock<SetupReport>>,
     migrations: Vec<migrate::Applied>,
+    interfaces: Interfaces,
+    rules: Option<Arc<RouteRules>>,
 }
 
 impl Host {
@@ -85,6 +91,8 @@ impl Host {
             options: HostOptions::default(),
             setup: Arc::new(RwLock::new(SetupReport::default())),
             migrations: Vec::new(),
+            interfaces: Interfaces::new(),
+            rules: None,
         }
     }
 
@@ -113,10 +121,15 @@ impl Host {
             let ordered: Vec<Arc<dyn Plugin>> = order.iter().map(|(_, p)| p.clone()).collect();
             host.migrations = migrate::run_at_start(sql.as_ref(), &ordered).await?;
         }
-        let loaded = plugins::load(&host.config, registry, providers, &host.hooks).await?;
+        let loaded = plugins::load(&host.config, registry, providers, &host.hooks, &host.interfaces).await?;
         for l in loaded {
             host.extra = host.extra.merge(l.router);
             host.plugins.push(l.plugin);
+        }
+        if !host.config.routes.is_empty() {
+            let rules = RouteRules::build(&host.config.routes, &host.interfaces, providers.cache.clone())
+                .map_err(HostError::Routes)?;
+            host.rules = Some(Arc::new(rules));
         }
         host.refresh_setup().await?;
         Ok(host)
@@ -133,6 +146,11 @@ impl Host {
     /// Started plugins, in start order.
     pub fn plugins(&self) -> &[Arc<dyn Plugin>] {
         &self.plugins
+    }
+
+    /// Interfaces the started plugins offer (identity-provider, authorizer, ...).
+    pub fn interfaces(&self) -> &Interfaces {
+        &self.interfaces
     }
 
     /// Migrations applied while starting.
@@ -168,10 +186,13 @@ impl Host {
             setup: self.setup.clone(),
             started: Instant::now(),
         };
-        let plugin_routes = self
-            .extra
-            .clone()
-            .layer(middleware::from_fn_with_state(self.setup.clone(), setup_gate));
+        let mut plugin_routes = self.extra.clone();
+        if let Some(rules) = &self.rules {
+            plugin_routes =
+                plugin_routes.layer(middleware::from_fn_with_state(rules.clone(), routes::middleware));
+        }
+        let plugin_routes =
+            plugin_routes.layer(middleware::from_fn_with_state(self.setup.clone(), setup_gate));
         Router::new()
             .route("/health", get(health))
             .with_state(state)
@@ -224,9 +245,12 @@ impl Host {
                 json!({ "app": self.config.app, "addr": local.to_string() }),
             ))
             .await;
-        let served = axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown)
-            .await;
+        let served = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown)
+        .await;
         refresher.abort();
         served?;
         for p in &self.plugins {

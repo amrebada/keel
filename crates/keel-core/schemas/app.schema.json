@@ -254,9 +254,29 @@
             "items": {
               "type": "string",
               "minLength": 1
+            },
+            "description": "All must pass: authenticated, role:x, permission:x, owner:param, rate-limit:n/period, any(...), all(...), or a plugin guard such as plan:x."
+          },
+          "validate": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "JSON Schemas the request must match; failures answer 422 validation_failed.",
+            "properties": {
+              "body": {
+                "type": "object",
+                "description": "JSON Schema for the JSON body"
+              },
+              "query": {
+                "type": "object",
+                "description": "JSON Schema for the query string; values are coerced to the property's type"
+              }
             }
           }
         }
+      },
+      "description": "Guards and validation by route pattern: \"[METHOD ]/path\" where * is one segment, ** the rest and {name} a captured segment. Every matching rule applies.",
+      "propertyNames": {
+        "pattern": "^((GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) )?/"
       }
     },
     "secrets": {

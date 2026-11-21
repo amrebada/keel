@@ -7,12 +7,14 @@
 pub mod config;
 pub mod migrate;
 pub mod plugins;
+pub mod routes;
 pub mod secrets;
 pub mod server;
 pub mod setup;
 
 pub use config::{
     AppConfig, ConfigError, Issue, PluginEntry, ProviderConfig, RouteRule, SecretsConfig, ServerConfig,
+    ValidateRule,
 };
 pub use keel_sdk::{Event, HookBus};
 pub use plugins::{PluginLoadError, PluginRegistry};

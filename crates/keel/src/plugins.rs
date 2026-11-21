@@ -12,5 +12,6 @@ pub fn builtin() -> PluginRegistry {
         .register(keel_plugin_auth_mfa::AuthMfa::new())
         .register(keel_plugin_auth_oauth::AuthOauth::new())
         .register(keel_plugin_ping::Ping::new())
+        .register(keel_plugin_rbac::Rbac::new())
     // keel:plugins:end
 }

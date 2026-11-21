@@ -80,4 +80,17 @@ impl Cache for MemoryStore {
     async fn delete(&self, key: &str) -> CapResult<bool> {
         Ok(self.remove(key))
     }
+    async fn incr(&self, key: &str, ttl: Duration) -> CapResult<i64> {
+        let mut map = self.map.lock().unwrap();
+        let now = Instant::now();
+        let entry = map
+            .entry(self.key(key))
+            .or_insert_with(|| (b"0".to_vec(), Some(now + ttl)));
+        if matches!(entry.1, Some(exp) if exp <= now) {
+            *entry = (b"0".to_vec(), Some(now + ttl));
+        }
+        let n = String::from_utf8_lossy(&entry.0).parse::<i64>().unwrap_or(0) + 1;
+        entry.0 = n.to_string().into_bytes();
+        Ok(n)
+    }
 }

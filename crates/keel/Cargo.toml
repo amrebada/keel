@@ -27,6 +27,7 @@ keel-plugin-auth-core = { path = "../../plugins/auth-core" }
 keel-plugin-auth-mfa = { path = "../../plugins/auth-mfa" }
 keel-plugin-auth-oauth = { path = "../../plugins/auth-oauth" }
 keel-plugin-ping = { path = "../../plugins/ping" }
+keel-plugin-rbac = { path = "../../plugins/rbac" }
 # keel:plugins:end
 
 [dev-dependencies]

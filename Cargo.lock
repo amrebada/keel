@@ -1241,6 +1241,7 @@ dependencies = [
  "keel-plugin-auth-mfa",
  "keel-plugin-auth-oauth",
  "keel-plugin-ping",
+ "keel-plugin-rbac",
  "keel-providers",
  "keel-sdk",
  "serde",
@@ -1271,6 +1272,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "urlencoding",
  "uuid",
 ]
 
@@ -1340,6 +1342,22 @@ dependencies = [
  "keel-sdk",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "keel-plugin-rbac"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "http-body-util",
+ "keel-core",
+ "keel-plugin-auth-core",
+ "keel-providers",
+ "keel-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

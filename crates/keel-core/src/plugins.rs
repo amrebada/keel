@@ -179,6 +179,16 @@ pub fn check(
         }
     }
 
+    let offered: Vec<String> = chosen
+        .iter()
+        .flat_map(|(_, p)| p.manifest().interfaces.clone())
+        .collect();
+    issues.extend(crate::routes::check_needs(
+        &config.routes,
+        &offered,
+        providers.cache.is_some(),
+    ));
+
     if !issues.is_empty() {
         return Err(PluginLoadError(issues));
     }
@@ -196,9 +206,9 @@ pub async fn load(
     registry: &PluginRegistry,
     providers: &CapabilityProviders,
     hooks: &Arc<HookBus>,
+    interfaces: &keel_sdk::interfaces::Interfaces,
 ) -> Result<Vec<Loaded>, PluginLoadError> {
     let order = check(config, registry, providers)?;
-    let interfaces = keel_sdk::interfaces::Interfaces::new();
     let mut loaded = Vec::new();
     for (i, plugin) in order {
         let m = plugin.manifest();

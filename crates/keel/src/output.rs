@@ -70,6 +70,7 @@ pub fn issues_of(err: &anyhow::Error) -> Vec<Issue> {
     if let Some(e) = err.downcast_ref::<keel_core::HostError>() {
         match e {
             keel_core::HostError::Plugins(p) => return p.0.clone(),
+            keel_core::HostError::Routes(i) => return i.clone(),
             keel_core::HostError::Migrations(keel_core::migrate::MigrateError::Invalid(i)) => {
                 return i.clone()
             }
