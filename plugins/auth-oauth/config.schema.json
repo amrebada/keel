@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "redirect_base_url": {
+      "type": "string",
+      "default": "http://localhost:8080",
+      "description": "Public base URL of this API; callbacks are {redirect_base_url}/auth/oauth/<provider>/callback."
+    },
+    "success_redirect": {
+      "type": "string",
+      "description": "Frontend URL to send the browser to after login, with tokens in the URL fragment. Without it the callback answers JSON."
+    },
+    "link_by_email": {
+      "type": "boolean",
+      "default": true,
+      "description": "Sign a provider identity into an existing account with the same email, when the provider says the email is verified."
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "google": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable google sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        },
+        "apple": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable apple sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        },
+        "facebook": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable facebook sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        },
+        "linkedin": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable linkedin sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        },
+        "github": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable github sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        },
+        "microsoft": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable microsoft sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        },
+        "x": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Enable x sign-in. Endpoint overrides are for tests and self-hosted providers.",
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auth_url": {
+              "type": "string"
+            },
+            "token_url": {
+              "type": "string"
+            },
+            "userinfo_url": {
+              "type": "string"
+            },
+            "emails_url": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

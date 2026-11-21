@@ -7,8 +7,9 @@ use semver::{Version, VersionReq};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::capabilities::Capability;
+use crate::capabilities::{Capability, DegradeLevel};
 use crate::issues::{format_list, schema_issues, Issue};
+use crate::setup::SetupStep;
 
 const PLUGIN_SCHEMA: &str = include_str!("../schemas/plugin.schema.json");
 
@@ -31,8 +32,10 @@ pub struct Manifest {
     pub config_schema: Option<Value>,
     pub runtime_config: Vec<String>,
     pub migrations: Option<String>,
-    /// Setup steps for the user (used by setup tracking in phase 4).
-    pub setup: Vec<Value>,
+    /// Human actions the plugin needs (accounts, keys), tracked by `keel setup`.
+    pub setup: Vec<SetupStep>,
+    /// Default `/health` weight; `app.yaml` can override it per plugin.
+    pub degrade_level: DegradeLevel,
 }
 
 /// A route the plugin declares, e.g. `GET /hello`.
@@ -77,7 +80,9 @@ struct Raw {
     #[serde(default)]
     migrations: Option<String>,
     #[serde(default)]
-    setup: Vec<Value>,
+    setup: Vec<SetupStep>,
+    #[serde(default)]
+    degrade_level: DegradeLevel,
 }
 
 #[derive(Deserialize, Default)]
@@ -182,6 +187,16 @@ impl Manifest {
             routes.push(route);
         }
 
+        let mut step_ids = BTreeSet::new();
+        for (i, step) in raw.setup.iter().enumerate() {
+            if !step_ids.insert(step.id.as_str()) {
+                issues.push(Issue::new(
+                    format!("setup[{i}].id"),
+                    format!("`{}` is used by another step", step.id),
+                ));
+            }
+        }
+
         let config_schema = match config_schema {
             None => None,
             Some(text) => {
@@ -213,6 +228,7 @@ impl Manifest {
             runtime_config: raw.runtime_config,
             migrations: raw.migrations,
             setup: raw.setup,
+            degrade_level: raw.degrade_level,
         })
     }
 

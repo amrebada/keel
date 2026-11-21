@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "app_url": {
+      "type": "string",
+      "default": "http://localhost:8080",
+      "description": "Base URL used in links sent by email."
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Link templates in emails; {token} is replaced. Point them at your frontend if it handles these pages.",
+      "properties": {
+        "verify": { "type": "string", "default": "{app_url}/auth/verify?token={token}" },
+        "reset": { "type": "string", "default": "{app_url}/reset-password?token={token}" },
+        "magic_link": { "type": "string", "default": "{app_url}/auth/magic-link/verify?token={token}" }
+      }
+    },
+    "signup": { "type": "boolean", "default": true, "description": "Allow new accounts through POST /auth/signup." },
+    "require_verified_email": { "type": "boolean", "default": true, "description": "Refuse password login until the email is verified." },
+    "magic_link": { "type": "boolean", "default": true },
+    "password_min_length": { "type": "integer", "minimum": 8, "maximum": 128, "default": 8 },
+    "access_ttl_secs": { "type": "integer", "minimum": 60, "maximum": 86400, "default": 900 },
+    "refresh_ttl_secs": { "type": "integer", "minimum": 3600, "maximum": 31536000, "default": 2592000 },
+    "token_ttl_secs": {
+      "type": "integer", "minimum": 300, "maximum": 604800, "default": 86400,
+      "description": "Lifetime of verification, reset and magic-link tokens (magic links are capped at 15 minutes)."
+    }
+  }
+}

@@ -8,22 +8,32 @@
 //! Plugins are compiled into the host binary. They talk to the outside world
 //! only through capabilities ([`capabilities`]) and events ([`HookBus`]).
 
+pub mod auth;
 pub mod capabilities;
 pub mod hooks;
+pub mod http;
+pub mod interfaces;
 pub mod issues;
 pub mod manifest;
+pub mod migrations;
 pub mod plugin;
+pub mod setup;
 
 pub use async_trait::async_trait;
 pub use capabilities::{Capabilities, Capability, CapabilityError};
 pub use hooks::{Event, HookBus};
+pub use http::ApiError;
 pub use issues::Issue;
 pub use manifest::{Manifest, ManifestError, Route};
+pub use migrations::Migration;
 pub use plugin::{Emitter, Health, InitContext, Plugin, PluginError, Routes};
+pub use setup::SetupStep;
 
 /// Re-exports plugin crates commonly need, so they only depend on `keel-sdk`.
 pub mod prelude {
-    pub use crate::{async_trait, Event, Health, InitContext, Manifest, Plugin, PluginError};
+    pub use crate::{
+        async_trait, ApiError, Event, Health, InitContext, Manifest, Migration, Plugin, PluginError,
+    };
     pub use axum::{extract, response, Json};
     pub use serde_json::{json, Value};
 }

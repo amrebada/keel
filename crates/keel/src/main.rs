@@ -1,5 +1,6 @@
 mod describe;
 mod dotenv;
+mod ops;
 mod output;
 mod plugins;
 mod scaffold;
@@ -12,7 +13,9 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
-use keel_core::{AppConfig, EnvSecrets, Host, PluginRegistry, SecretSource};
+use keel_core::setup::SetupState;
+use keel_core::{AppConfig, Host, HostOptions, PluginRegistry, SecretSource};
+use keel_providers::LayeredSecrets;
 use keel_sdk::capabilities::CapabilityProviders;
 use keel_sdk::Manifest;
 use output::Out;
@@ -72,6 +75,24 @@ enum Command {
         #[command(subcommand)]
         command: PluginsCommand,
     },
+    /// Show which setup steps (accounts, keys, DNS) are done or missing.
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
+    },
+    /// Plan and run plugin database migrations. Without flags, prints the
+    /// plan (a dry run). Destructive migrations need --allow-destructive.
+    Migrate {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        /// Run pending additive migrations.
+        #[arg(long)]
+        apply: bool,
+        /// Also run this destructive migration (`<plugin>/<id>`), after
+        /// copying the tables it touches to keel_backup_<time>_<table>.
+        #[arg(long = "allow-destructive", value_name = "PLUGIN/ID")]
+        allow_destructive: Vec<String>,
+    },
     /// Create a plugin crate under plugins/ and compile it into this binary.
     NewPlugin {
         /// Plugin id, e.g. `hello` or `stripe-billing`.
@@ -88,6 +109,28 @@ enum ConfigCommand {
     },
     /// Print app.yaml with every default filled in. Secrets stay as references.
     Expand {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum SetupCommand {
+    /// Every step of every configured plugin: done, missing, failed or skipped.
+    Status {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+    },
+    /// Mark a manual step done (stored in .keel/setup.json).
+    Done {
+        /// `<plugin>/<step>`, as `keel setup status` prints it.
+        id: String,
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+    },
+    /// Mark a manual step not done again.
+    Undo {
+        id: String,
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
     },
@@ -129,6 +172,13 @@ async fn main() -> ExitCode {
     if let Command::Serve { config }
     | Command::Dev { config }
     | Command::Check { config }
+    | Command::Migrate { config, .. }
+    | Command::Setup {
+        command:
+            SetupCommand::Status { config }
+            | SetupCommand::Done { config, .. }
+            | SetupCommand::Undo { config, .. },
+    }
     | Command::Config {
         command: ConfigCommand::Validate { config } | ConfigCommand::Expand { config },
     } = &cli.command
@@ -147,7 +197,7 @@ async fn main() -> ExitCode {
         Command::Check { config }
         | Command::Config {
             command: ConfigCommand::Validate { config },
-        } => validate(out, &config),
+        } => validate(out, &config).await,
         Command::Config {
             command: ConfigCommand::Expand { config },
         } => expand(out, &config),
@@ -164,6 +214,20 @@ async fn main() -> ExitCode {
         Command::Plugins {
             command: PluginsCommand::Check { path },
         } => check_plugin(out, &path),
+        Command::Setup {
+            command: SetupCommand::Status { config },
+        } => ops::setup_status(out, &config).await,
+        Command::Setup {
+            command: SetupCommand::Done { id, config },
+        } => ops::setup_mark(out, &config, &id, true).await,
+        Command::Setup {
+            command: SetupCommand::Undo { id, config },
+        } => ops::setup_mark(out, &config, &id, false).await,
+        Command::Migrate {
+            config,
+            apply,
+            allow_destructive,
+        } => ops::migrate(out, &config, apply, &allow_destructive).await,
         Command::NewPlugin { id } => new_plugin(out, &id),
     };
     match result {
@@ -179,9 +243,14 @@ async fn main() -> ExitCode {
 fn static_providers(config: &AppConfig) -> CapabilityProviders {
     // For checks, pretend each configured slot is available without connecting.
     let mut p = CapabilityProviders {
-        secrets: Some(Arc::new(EnvSecrets)),
+        secrets: Some(Arc::new(keel_core::EnvSecrets)),
+        crypto: Some(Arc::new(keel_providers::DefaultCrypto)),
+        http: Some(Arc::new(keel_providers::ReqwestClient::default())),
         ..Default::default()
     };
+    if config.providers.contains_key("email") {
+        p.email = Some(Arc::new(keel_providers::ConsoleEmail::default()));
+    }
     let mem = Arc::new(keel_providers::MemoryStore::new());
     if config.providers.contains_key("cache") {
         p.cache = Some(mem.clone());
@@ -215,17 +284,37 @@ impl keel_sdk::capabilities::Sql for NoSql {
     }
 }
 
-async fn connect(config: &AppConfig) -> Result<CapabilityProviders> {
+/// The secret source `secrets:` in app.yaml asks for (environment by default).
+async fn secrets_for(path: &Path) -> Result<Arc<LayeredSecrets>> {
+    let cfg = AppConfig::peek_secrets(path)?;
+    let s = keel_providers::secret_source(cfg.as_ref())
+        .await
+        .map_err(|e| anyhow!(e))?;
+    Ok(Arc::new(s))
+}
+
+/// Loads app.yaml with its secret source and checks its plugins.
+async fn load_checked(path: &Path, registry: &PluginRegistry) -> Result<(AppConfig, Arc<LayeredSecrets>)> {
+    let secrets = secrets_for(path).await?;
+    let config = AppConfig::load_file(path, secrets.as_ref())?;
+    keel_core::plugins::check(&config, registry, &static_providers(&config))?;
+    Ok((config, secrets))
+}
+
+async fn connect(config: &AppConfig, secrets: Arc<LayeredSecrets>) -> Result<CapabilityProviders> {
     let mut p = keel_providers::connect(&config.providers).await?;
-    p.secrets = Some(Arc::new(EnvSecrets));
+    p.secrets = Some(secrets);
     Ok(p)
 }
 
 async fn start(path: &Path, registry: &PluginRegistry) -> Result<Host> {
-    let config = AppConfig::load_file(path, &EnvSecrets)?;
-    keel_core::plugins::check(&config, registry, &static_providers(&config))?;
-    let providers = connect(&config).await?;
-    Ok(Host::start(config, registry, &providers).await?)
+    let (config, secrets) = load_checked(path, registry).await?;
+    let providers = connect(&config, secrets.clone()).await?;
+    let options = HostOptions {
+        secrets,
+        state_file: Some(SetupState::path_for(path)),
+    };
+    Ok(Host::start_with(config, registry, &providers, options).await?)
 }
 
 async fn serve(path: &Path) -> Result<()> {
@@ -267,12 +356,7 @@ async fn dev(path: &Path) -> Result<()> {
             }
             seen = now;
             eprintln!("keel dev: {} changed, reloading", path.display());
-            match AppConfig::load_file(path, &EnvSecrets)
-                .map_err(anyhow::Error::from)
-                .and_then(|c| {
-                    keel_core::plugins::check(&c, &registry, &static_providers(&c))?;
-                    Ok(c)
-                }) {
+            match load_checked(path, &registry).await {
                 Ok(_) => break,
                 Err(e) => eprintln!("keel dev: not reloading, fix app.yaml first:\n{e:#}"),
             }
@@ -298,9 +382,8 @@ async fn dev(path: &Path) -> Result<()> {
     }
 }
 
-fn validate(out: Out, path: &Path) -> Result<()> {
-    let config = AppConfig::load_file(path, &EnvSecrets)?;
-    keel_core::plugins::check(&config, &plugins::builtin(), &static_providers(&config))?;
+async fn validate(out: Out, path: &Path) -> Result<()> {
+    let (config, _) = load_checked(path, &plugins::builtin()).await?;
     out.success(
         format!(
             "ok: {} is valid (app '{}', {} provider(s), {} plugin(s), {} route rule(s))",

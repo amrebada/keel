@@ -48,21 +48,24 @@ runtime_config: [providers.google.enabled]
 
 #[test]
 fn reports_schema_problems_with_paths() {
-    let e = err("id: Bad_Id\nversion: 1.0.0\nrequires: { capabilities: [sql, teleport] }\nprovides: { routes: [FETCH /x] }\ncolour: blue\n");
+    let e = err("id: Bad_Id\nversion: one\nrequires: { capabilities: [sql, teleport] }\nprovides: { routes: [FETCH /x] }\ncolour: blue\n");
     assert!(e.contains("(root): \"summary\" is a required property"), "{e}");
     assert!(
         e.contains("(root): Additional properties are not allowed ('colour' was unexpected)"),
         "{e}"
     );
     assert!(e.contains("id: \"Bad_Id\" does not match"), "{e}");
+    assert!(
+        e.contains("version: \"one\" does not match"),
+        "first pass reports a bad version: {e}"
+    );
     assert!(e.contains("requires.capabilities[1]"), "{e}");
     assert!(e.contains("provides.routes[0]"), "{e}");
 }
 
 #[test]
 fn reports_semantic_problems() {
-    let e = err("id: x\nversion: one\nsummary: s\nrequires: { host: \"!!\", plugins: { x: \"^1\", y: \"nope\" } }\nprovides: { routes: [GET /a, GET /a, GET /health] }\n");
-    assert!(e.contains("version: not a semver version"), "{e}");
+    let e = err("id: x\nversion: 1.0.0\nsummary: s\nrequires: { host: \"!!\", plugins: { x: \"^1\", y: \"nope\" } }\nprovides: { routes: [GET /a, GET /a, GET /health] }\n");
     assert!(e.contains("requires.host: not a version range"), "{e}");
     assert!(
         e.contains("requires.plugins.x: a plugin cannot require itself"),

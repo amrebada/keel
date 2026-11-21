@@ -6,12 +6,16 @@ Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An 
 
 ## Status
 
-Phase 3 of 8 (data providers and CLI) is done:
+Phase 4 of 8 (auth, setup tracking, migration safety) is done:
 
 - **Host core (phase 1):** loads and validates `app.yaml`, resolves `${secret:NAME}` from environment variables, runs an event hook bus, serves `/health`.
 - **Plugin contract (phase 2):** plugins are Rust crates compiled into the binary. Each has a `plugin.yaml` manifest, a `config.schema.json`, and a type implementing the `Plugin` trait from `keel-sdk`. The host starts only the plugins `app.yaml` lists, after checking versions, dependencies, capabilities, config and route ownership.
-- **Data providers (phase 3):** `providers:` in `app.yaml` picks SQL (sqlite, postgres, mysql), cache and key-value (memory or redis). Switching from SQLite to Postgres and Redis is a YAML change. Each plugin gets its own key prefix (`<id>:`) and table prefix (`<id>_`). `/health` reports every provider and returns 503 when anything is down.
+- **Data providers (phase 3):** `providers:` in `app.yaml` picks SQL (sqlite, postgres, mysql), cache and key-value (memory or redis). Switching from SQLite to Postgres and Redis is a YAML change. Each plugin gets its own key prefix (`<id>:`) and table prefix (`<id>_`). `/health` reports every provider and plugin.
 - **CLI (phase 3):** `init`, `dev` (reloads on `app.yaml` changes and keeps running on a broken edit), `add`, `plugins list/describe --ai`, `config validate/expand`, and `--json` on every command for AI tools.
+- **Auth (phase 4):** `auth-core` (email and password, verification, password reset, magic links, JWT access tokens with rotating refresh tokens, logout everywhere), `auth-oauth` (Google, Apple, Facebook, LinkedIn, GitHub, Microsoft and X presets on one OAuth2/OIDC engine, with safe account linking) and `auth-mfa` (TOTP and recovery codes).
+- **Setup tracking (phase 4):** each plugin lists the setup steps it needs (create an OAuth app, set a secret). `keel setup status` shows what is missing and how to do it, and the routes a missing step blocks answer `503 setup_incomplete` until it is done.
+- **Migration safety (phase 4):** plugin migrations are checked before they run. A migration that drops, renames or deletes is blocked unless you allow it by name, and `keel migrate --apply` backs up the touched tables first.
+- **Secret sources and degrade levels (phase 4):** secrets come from env vars and `.env`, or from HashiCorp Vault. Each plugin and provider has a `degrade_level` (info, warn, error); `/health` answers 503 only when an error-level item is down.
 
 ## Try it
 
@@ -41,6 +45,43 @@ keel add ping                   # adds the entry with its minimal config, keeps 
 keel config validate            # every problem with its path
 keel config expand              # app.yaml with defaults filled in, secrets left as refs
 ```
+
+## Add auth
+
+```yaml
+providers:
+  email: { use: console }          # prints emails (verify links, codes) to the log
+plugins:
+  - use: auth-core
+    config: { app_url: "http://localhost:3000" }
+  - use: auth-oauth
+    config:
+      redirect_base_url: "http://localhost:8080"
+      providers: { google: {} }
+  - use: auth-mfa
+```
+
+```sh
+keel setup status                 # lists AUTH_JWT_SECRET, OAUTH_GOOGLE_CLIENT_ID, ... with steps
+echo "AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> .env
+curl -XPOST localhost:8080/auth/signup -d '{"email":"a@b.co","password":"correct horse battery"}'
+curl -XPOST localhost:8080/auth/login  -d '{"email":"a@b.co","password":"correct horse battery"}'
+curl localhost:8080/auth/oauth/google/start   # 503 setup_incomplete until the Google secrets are set
+```
+
+Manual steps (such as "add the redirect URL in the Google console") are marked with `keel setup done auth-oauth/<step>`, and the state is kept in `.keel/setup.json`.
+
+## Migrations
+
+`keel migrate` prints the plan without changing anything: each pending migration, whether it is additive or destructive, and how many rows it would touch. `keel migrate --apply` runs it. A destructive migration only runs with `--allow-destructive <plugin>/<id>`, and the tables it touches are copied to `keel_backup_<time>_<table>` first. `keel serve` and `keel dev` run additive migrations at start and refuse to start on a blocked one.
+
+## Secrets from Vault
+
+```yaml
+secrets: { use: vault, url: "https://vault:8200", mount: secret, path: shop }
+```
+
+Keel reads the KV v2 secret at `secret/data/shop` with the token in `VAULT_TOKEN`. Env vars and `.env` still win, so a local override works.
 
 ## Write a plugin
 
@@ -76,10 +117,10 @@ error: app.yaml: 3 problem(s) found
 | --- | --- |
 | `crates/keel-sdk` | What plugins depend on: `Plugin` trait, manifest format, capability traits, hook bus |
 | `crates/keel-sdk/schemas/plugin.schema.json` | JSON Schema for `plugin.yaml` |
-| `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host |
+| `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host, setup tracking, migration planner |
 | `crates/keel-core/schemas/app.schema.json` | JSON Schema for `app.yaml` |
-| `crates/keel-providers` | SQL (sqlx), Redis and in-memory providers |
-| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`) |
+| `crates/keel-providers` | SQL (sqlx), Redis, in-memory, crypto, HTTP, console email and Vault providers |
+| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`, `setup`, `migrate`) |
 | `plugins/` | Compiled-in plugins |
 | `examples/app.yaml` | Sample config |
 

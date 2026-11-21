@@ -172,6 +172,15 @@ impl Sql for SqlProvider {
             .map_err(err)?;
         Ok(rows.iter().map(row_to_json).collect())
     }
+
+    async fn transaction(&self, statements: &[String]) -> CapResult<()> {
+        let mut tx = self.pool.begin().await.map_err(err)?;
+        for s in statements {
+            let s = self.prepare(s);
+            sqlx::query(&s).execute(&mut *tx).await.map_err(err)?;
+        }
+        tx.commit().await.map_err(err)
+    }
 }
 
 #[cfg(test)]

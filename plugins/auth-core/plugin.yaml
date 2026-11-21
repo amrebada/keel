@@ -1,0 +1,37 @@
+id: auth-core
+version: 0.1.0
+summary: Email + password accounts with Argon2id, email verification, password reset, magic links, JWT access + rotating refresh tokens, sessions and logout everywhere.
+requires:
+  host: "^0.1"
+  capabilities: [sql, crypto, email, secrets, log]
+provides:
+  interfaces: [identity-provider]
+  routes:
+    - POST /auth/signup
+    - POST /auth/login
+    - POST /auth/refresh
+    - POST /auth/logout
+    - POST /auth/logout-all
+    - GET /auth/me
+    - GET /auth/verify
+    - POST /auth/verify
+    - POST /auth/verify/resend
+    - POST /auth/password/forgot
+    - POST /auth/password/reset
+    - POST /auth/magic-link
+    - GET /auth/magic-link/verify
+    - POST /auth/magic-link/verify
+  events: [auth.user.created, auth.user.verified, auth.login, auth.logout, auth.password.reset]
+config: config.schema.json
+runtime_config: []
+migrations: built-in
+degrade_level: error
+setup:
+  - id: jwt-secret
+    title: Create the key that signs login tokens
+    kind: secret
+    steps:
+      - "Generate 32+ random bytes, e.g. `openssl rand -base64 48`"
+      - Store it as AUTH_JWT_SECRET (environment, .env or the secret store). Changing it logs everyone out.
+    produces: [secret:AUTH_JWT_SECRET]
+    verify: { type: plugin-check }

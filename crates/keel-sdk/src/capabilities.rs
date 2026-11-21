@@ -87,6 +87,14 @@ pub trait Sql: Send + Sync {
     }
     async fn execute(&self, sql: &str, params: &[Value]) -> CapResult<u64>;
     async fn query(&self, sql: &str, params: &[Value]) -> CapResult<Vec<Map<String, Value>>>;
+    /// Runs statements in one transaction where the database allows it
+    /// (MySQL commits DDL implicitly). The default runs them one by one.
+    async fn transaction(&self, statements: &[String]) -> CapResult<()> {
+        for s in statements {
+            self.execute(s, &[]).await?;
+        }
+        Ok(())
+    }
 }
 
 /// Durable key-value store.
@@ -218,6 +226,39 @@ impl Capabilities {
     }
 }
 
+/// How much an item being down matters to `/health`: only `error` turns the
+/// whole host `down` (HTTP 503); `info` and `warn` make it `degraded` (200).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum DegradeLevel {
+    Info,
+    Warn,
+    #[default]
+    Error,
+}
+
+impl DegradeLevel {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "info" => Some(Self::Info),
+            "warn" => Some(Self::Warn),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+
+    /// Default for a provider slot: losing the database or key-value store
+    /// breaks the app; losing the cache or email does not.
+    pub fn for_slot(slot: &str) -> Self {
+        match slot {
+            "cache" | "email" => Self::Warn,
+            _ => Self::Error,
+        }
+    }
+}
+
 /// A configured data provider, as reported in `/health` and by the CLI.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ProviderInfo {
@@ -228,6 +269,7 @@ pub struct ProviderInfo {
     pub capability: Capability,
     /// Whether it can be switched or reconnected live (phase 7).
     pub hot_load: bool,
+    pub degrade_level: DegradeLevel,
 }
 
 /// What the host can provide. The host builds one per plugin with

@@ -32,6 +32,22 @@ pub struct AppConfig {
     pub plugins: Vec<PluginEntry>,
     #[serde(default)]
     pub routes: BTreeMap<String, RouteRule>,
+    /// Where `${secret:NAME}` values come from. `None` means environment.
+    #[serde(default)]
+    pub secrets: Option<SecretsConfig>,
+}
+
+/// The `secrets:` block.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SecretsConfig {
+    #[serde(rename = "use")]
+    pub kind: String,
+    pub url: Option<String>,
+    pub token_env: Option<String>,
+    pub mount: Option<String>,
+    pub path: Option<String>,
+    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -77,6 +93,9 @@ pub struct PluginEntry {
     pub spec: String,
     #[serde(default = "empty_object")]
     pub config: Value,
+    /// Overrides the plugin's default `/health` weight.
+    #[serde(default)]
+    pub degrade_level: Option<keel_sdk::capabilities::DegradeLevel>,
 }
 
 fn empty_object() -> Value {
@@ -131,11 +150,41 @@ fn format_missing(file: &str, missing: &[MissingSecret]) -> String {
     for m in missing {
         s.push_str(&format!("\n  - {} (used at {})", m.name, m.path));
     }
-    s.push_str("\n  Set them as environment variables, e.g. export NAME=value");
+    s.push_str(
+        "\n  Set them in the environment or .env (e.g. NAME=value), or in the secret store under `secrets:`",
+    );
     s
 }
 
 impl AppConfig {
+    /// Reads only the `secrets:` block, before secrets can be resolved, so
+    /// the CLI can build the secret source the rest of the file needs.
+    pub fn peek_secrets(path: impl AsRef<Path>) -> Result<Option<SecretsConfig>, ConfigError> {
+        let path = path.as_ref();
+        let file = path.display().to_string();
+        let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Read {
+            file: file.clone(),
+            source,
+        })?;
+        let value: Value = serde_yaml::from_str(&text).map_err(|e| ConfigError::Parse {
+            file: file.clone(),
+            message: e.to_string(),
+        })?;
+        let issues = validate(&value);
+        if !issues.is_empty() {
+            return Err(ConfigError::Invalid { file, issues });
+        }
+        match value.get("secrets") {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => serde_json::from_value(v.clone())
+                .map(Some)
+                .map_err(|e| ConfigError::Invalid {
+                    file,
+                    issues: vec![Issue::new("secrets", e.to_string())],
+                }),
+        }
+    }
+
     /// Reads and loads a config file.
     pub fn load_file(path: impl AsRef<Path>, secrets: &dyn SecretSource) -> Result<Self, ConfigError> {
         let path = path.as_ref();

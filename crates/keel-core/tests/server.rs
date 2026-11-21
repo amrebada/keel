@@ -108,9 +108,8 @@ impl keel_sdk::capabilities::Kv for DownKv {
     }
 }
 
-#[tokio::test]
-async fn health_is_503_when_a_provider_is_down() {
-    use keel_sdk::capabilities::{Capability, CapabilityProviders, ProviderInfo};
+async fn health_with_down_kv(level: &str) -> (StatusCode, Value) {
+    use keel_sdk::capabilities::{Capability, CapabilityProviders, DegradeLevel, ProviderInfo};
     let config = AppConfig::load_str(
         "app: team-tasks\nproviders:\n  kv: { use: redis, url: redis://x }\n",
         "app.yaml",
@@ -124,15 +123,27 @@ async fn health_is_503_when_a_provider_is_down() {
             kind: "redis".into(),
             capability: Capability::Kv,
             hot_load: true,
+            degrade_level: DegradeLevel::parse(level).unwrap(),
         }],
         ..Default::default()
     };
     let host = Host::start(config, &keel_core::PluginRegistry::new(), &providers)
         .await
         .unwrap();
-    let (status, body) = get_json(host.router(), "/health").await;
+    get_json(host.router(), "/health").await
+}
+
+#[tokio::test]
+async fn health_is_503_only_when_an_error_level_item_is_down() {
+    let (status, body) = health_with_down_kv("error").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body["status"], "degraded");
+    assert_eq!(body["status"], "down");
     assert_eq!(body["providers"][0]["status"], "down");
     assert_eq!(body["providers"][0]["reason"], "connection refused");
+
+    for level in ["warn", "info"] {
+        let (status, body) = health_with_down_kv(level).await;
+        assert_eq!(status, StatusCode::OK, "{level}");
+        assert_eq!(body["status"], "degraded", "{level}");
+    }
 }

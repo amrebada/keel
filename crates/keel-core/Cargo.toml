@@ -9,6 +9,8 @@ rust-version.workspace = true
 [dependencies]
 keel-sdk.workspace = true
 semver.workspace = true
+sha2.workspace = true
+uuid.workspace = true
 axum.workspace = true
 jsonschema.workspace = true
 serde.workspace = true
@@ -21,6 +23,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 keel-plugin-ping = { path = "../../plugins/ping" }
+keel-providers = { path = "../keel-providers" }
 async-trait.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 tower.workspace = true
