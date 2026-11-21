@@ -33,7 +33,7 @@ async fn health_reports_app_and_configured_parts() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "ok");
     assert_eq!(body["app"], "team-tasks");
-    assert_eq!(body["plugins_configured"][0], "auth-core");
+    assert_eq!(body["plugins"], serde_json::json!([]));
     assert_eq!(body["providers_configured"][0], "cache");
 }
 

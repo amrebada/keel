@@ -6,12 +6,14 @@
 //! resolved, so error messages never contain secret values.
 
 use std::collections::BTreeMap;
-use std::fmt;
 use std::path::Path;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
 use serde_json::Value;
+
+use keel_sdk::issues::{format_list, schema_issues};
+pub use keel_sdk::Issue;
 
 use crate::secrets::{self, MissingSecret, SecretSource};
 
@@ -101,14 +103,6 @@ pub struct RouteRule {
     pub guard: Vec<String>,
 }
 
-/// One validation problem, with the config path it applies to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Issue {
-    /// Path such as `plugins[0].use`, or `(root)` for the top level.
-    pub path: String,
-    pub message: String,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("{file}: cannot read file: {source}")]
@@ -129,11 +123,7 @@ pub enum ConfigError {
 }
 
 fn format_issues(file: &str, issues: &[Issue]) -> String {
-    let mut s = format!("{file}: {} problem(s) found", issues.len());
-    for i in issues {
-        s.push_str(&format!("\n  - {}: {}", i.path, i.message));
-    }
-    s
+    format_list(file, issues)
 }
 
 fn format_missing(file: &str, missing: &[MissingSecret]) -> String {
@@ -200,55 +190,5 @@ fn validator() -> &'static jsonschema::Validator {
 
 /// Checks a parsed config against the app schema and returns every problem.
 pub fn validate(value: &Value) -> Vec<Issue> {
-    let mut issues: Vec<Issue> = validator()
-        .iter_errors(value)
-        .map(|e| Issue {
-            path: pointer_to_path(&e.instance_path().to_string()),
-            message: e.to_string(),
-        })
-        .collect();
-    issues.sort_by(|a, b| a.path.cmp(&b.path));
-    issues
-}
-
-/// `/plugins/0/use` -> `plugins[0].use`
-fn pointer_to_path(pointer: &str) -> String {
-    let mut out = String::new();
-    for seg in pointer.split('/').skip(1) {
-        let seg = seg.replace("~1", "/").replace("~0", "~");
-        if seg.chars().all(|c| c.is_ascii_digit()) && !seg.is_empty() {
-            out.push_str(&format!("[{seg}]"));
-        } else {
-            if !out.is_empty() {
-                out.push('.');
-            }
-            out.push_str(&seg);
-        }
-    }
-    if out.is_empty() {
-        "(root)".to_string()
-    } else {
-        out
-    }
-}
-
-impl fmt::Display for Issue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.path, self.message)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::pointer_to_path;
-
-    #[test]
-    fn pointer_paths() {
-        assert_eq!(pointer_to_path(""), "(root)");
-        assert_eq!(pointer_to_path("/plugins/0/use"), "plugins[0].use");
-        assert_eq!(
-            pointer_to_path("/routes/~1admin~1**/guard"),
-            "routes./admin/**.guard"
-        );
-    }
+    schema_issues(validator(), value)
 }

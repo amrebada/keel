@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/keel-core", "crates/keel"]
+members = ["crates/*", "plugins/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,10 +9,14 @@ repository = "https://github.com/amrebada/keel"
 rust-version = "1.85"
 
 [workspace.dependencies]
+keel-sdk = { path = "crates/keel-sdk", version = "0.1.0" }
+keel-core = { path = "crates/keel-core", version = "0.1.0" }
 anyhow = "1"
+async-trait = "0.1"
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 jsonschema = { version = "0.62", default-features = false }
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"

@@ -1,0 +1,242 @@
+//! `plugin.yaml`: the manifest that describes a plugin to the host and to an AI.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
+
+use semver::{Version, VersionReq};
+use serde::Deserialize;
+use serde_json::Value;
+
+use crate::capabilities::Capability;
+use crate::issues::{format_list, schema_issues, Issue};
+
+const PLUGIN_SCHEMA: &str = include_str!("../schemas/plugin.schema.json");
+
+/// A parsed, checked plugin manifest.
+#[derive(Debug, Clone)]
+pub struct Manifest {
+    pub id: String,
+    pub version: Version,
+    pub summary: String,
+    /// Host versions this plugin works with. Defaults to any.
+    pub host: VersionReq,
+    pub capabilities: Vec<Capability>,
+    /// Other plugins this one needs, by id, with a version range.
+    pub plugins: BTreeMap<String, VersionReq>,
+    pub interfaces: Vec<String>,
+    pub routes: Vec<Route>,
+    pub events: Vec<String>,
+    pub consumes: Vec<String>,
+    /// JSON Schema for the plugin's `config:` block, if it has one.
+    pub config_schema: Option<Value>,
+    pub runtime_config: Vec<String>,
+    pub migrations: Option<String>,
+    /// Setup steps for the user (used by setup tracking in phase 4).
+    pub setup: Vec<Value>,
+}
+
+/// A route the plugin declares, e.g. `GET /hello`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Route {
+    pub method: String,
+    pub path: String,
+}
+
+impl std::fmt::Display for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.method, self.path)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ManifestError {
+    #[error("plugin.yaml: not valid YAML: {0}")]
+    Parse(String),
+    #[error("{}", format_list("plugin.yaml", .0))]
+    Invalid(Vec<Issue>),
+    #[error("config.schema.json: {0}")]
+    ConfigSchema(String),
+}
+
+#[derive(Deserialize)]
+struct Raw {
+    id: String,
+    version: String,
+    summary: String,
+    #[serde(default)]
+    requires: RawRequires,
+    #[serde(default)]
+    provides: RawProvides,
+    #[serde(default)]
+    consumes: RawConsumes,
+    #[serde(default)]
+    #[allow(dead_code)]
+    config: Option<String>,
+    #[serde(default)]
+    runtime_config: Vec<String>,
+    #[serde(default)]
+    migrations: Option<String>,
+    #[serde(default)]
+    setup: Vec<Value>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawRequires {
+    host: Option<String>,
+    #[serde(default)]
+    capabilities: Vec<String>,
+    #[serde(default)]
+    plugins: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawProvides {
+    #[serde(default)]
+    interfaces: Vec<String>,
+    #[serde(default)]
+    routes: Vec<String>,
+    #[serde(default)]
+    events: Vec<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawConsumes {
+    #[serde(default)]
+    events: Vec<String>,
+}
+
+fn validator() -> &'static jsonschema::Validator {
+    static V: OnceLock<jsonschema::Validator> = OnceLock::new();
+    V.get_or_init(|| {
+        let schema: Value =
+            serde_json::from_str(PLUGIN_SCHEMA).expect("embedded plugin schema is valid JSON");
+        jsonschema::validator_for(&schema).expect("embedded plugin schema compiles")
+    })
+}
+
+impl Manifest {
+    /// Parses and checks `plugin.yaml` text, plus the optional config schema text.
+    pub fn from_sources(plugin_yaml: &str, config_schema: Option<&str>) -> Result<Self, ManifestError> {
+        let value: Value =
+            serde_yaml::from_str(plugin_yaml).map_err(|e| ManifestError::Parse(e.to_string()))?;
+        let mut issues = schema_issues(validator(), &value);
+        if !issues.is_empty() {
+            return Err(ManifestError::Invalid(issues));
+        }
+        let raw: Raw = serde_json::from_value(value).map_err(|e| ManifestError::Parse(e.to_string()))?;
+
+        let version = Version::parse(&raw.version)
+            .map_err(|e| issues.push(Issue::new("version", format!("not a semver version: {e}"))))
+            .ok();
+        let host = match &raw.requires.host {
+            None => Some(VersionReq::STAR),
+            Some(h) => VersionReq::parse(h)
+                .map_err(|e| issues.push(Issue::new("requires.host", format!("not a version range: {e}"))))
+                .ok(),
+        };
+        let mut plugins = BTreeMap::new();
+        for (id, req) in &raw.requires.plugins {
+            match VersionReq::parse(req) {
+                Ok(r) => {
+                    plugins.insert(id.clone(), r);
+                }
+                Err(e) => issues.push(Issue::new(
+                    format!("requires.plugins.{id}"),
+                    format!("not a version range: {e}"),
+                )),
+            }
+            if id == &raw.id {
+                issues.push(Issue::new(
+                    format!("requires.plugins.{id}"),
+                    "a plugin cannot require itself",
+                ));
+            }
+        }
+        let capabilities: Vec<Capability> = raw
+            .requires
+            .capabilities
+            .iter()
+            .filter_map(|c| Capability::parse(c))
+            .collect();
+
+        let mut routes = Vec::new();
+        let mut seen = BTreeSet::new();
+        for (i, r) in raw.provides.routes.iter().enumerate() {
+            let (method, path) = r.split_once(' ').expect("schema checks the route pattern");
+            let route = Route {
+                method: method.to_string(),
+                path: path.to_string(),
+            };
+            if !seen.insert(route.clone()) {
+                issues.push(Issue::new(
+                    format!("provides.routes[{i}]"),
+                    format!("`{r}` is declared twice"),
+                ));
+            }
+            if path == "/health" || path.starts_with("/_admin") {
+                issues.push(Issue::new(
+                    format!("provides.routes[{i}]"),
+                    format!("`{path}` is reserved by the host"),
+                ));
+            }
+            routes.push(route);
+        }
+
+        let config_schema = match config_schema {
+            None => None,
+            Some(text) => {
+                let v: Value = serde_json::from_str(text)
+                    .map_err(|e| ManifestError::ConfigSchema(format!("not valid JSON: {e}")))?;
+                jsonschema::validator_for(&v)
+                    .map_err(|e| ManifestError::ConfigSchema(format!("not a valid JSON Schema: {e}")))?;
+                Some(v)
+            }
+        };
+
+        if !issues.is_empty() {
+            issues.sort_by(|a, b| a.path.cmp(&b.path));
+            return Err(ManifestError::Invalid(issues));
+        }
+
+        Ok(Manifest {
+            id: raw.id,
+            version: version.expect("checked above"),
+            summary: raw.summary,
+            host: host.expect("checked above"),
+            capabilities,
+            plugins,
+            interfaces: raw.provides.interfaces,
+            routes,
+            events: raw.provides.events,
+            consumes: raw.consumes.events,
+            config_schema,
+            runtime_config: raw.runtime_config,
+            migrations: raw.migrations,
+            setup: raw.setup,
+        })
+    }
+
+    /// Checks `config` against the plugin's config schema. A plugin without a
+    /// schema accepts only an empty config.
+    pub fn validate_config(&self, config: &Value) -> Vec<Issue> {
+        match &self.config_schema {
+            Some(schema) => match jsonschema::validator_for(schema) {
+                Ok(v) => schema_issues(&v, config),
+                Err(e) => vec![Issue::new(
+                    "(root)",
+                    format!("plugin config schema is invalid: {e}"),
+                )],
+            },
+            None => match config {
+                Value::Object(m) if m.is_empty() => vec![],
+                Value::Null => vec![],
+                _ => vec![Issue::new("(root)", "this plugin takes no config")],
+            },
+        }
+    }
+
+    /// Whether this plugin declares `route`.
+    pub fn declares(&self, method: &str, path: &str) -> bool {
+        self.routes.iter().any(|r| r.method == method && r.path == path)
+    }
+}

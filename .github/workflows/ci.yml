@@ -20,3 +20,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Plugin template compiles and passes its own checks
+        run: |
+          cargo run -q -p keel -- new-plugin ci-probe
+          cargo fmt --all --check
+          cargo clippy -p keel-plugin-ci-probe --all-targets -- -D warnings
+          cargo test -p keel-plugin-ci-probe

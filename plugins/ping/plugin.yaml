@@ -1,0 +1,12 @@
+id: ping
+version: 0.1.0
+summary: Example plugin. GET /ping answers with a configurable message and emits ping.received.
+requires:
+  host: "^0.1"
+  capabilities: [log]
+provides:
+  routes:
+    - GET /ping
+  events: [ping.received]
+config: config.schema.json
+runtime_config: [message]

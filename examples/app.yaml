@@ -1,5 +1,5 @@
-# Sample Keel app. Plugins listed here are recorded but not loaded until
-# their phases ship; phase 1 only boots the host and serves /health.
+# Sample Keel app. Only compiled-in plugins can be listed here; see them with
+# `keel plugins list`. Auth, roles and the rest arrive in later phases.
 app: team-tasks
 server:
   host: 127.0.0.1
@@ -10,14 +10,9 @@ providers:
   cache: { use: memory }
 
 plugins:
-  - use: auth-core@^1
+  - use: ping@^0.1
     config:
-      session: { type: jwt, access_ttl: 15m }
-  - use: rbac@^1
-    config:
-      roles:
-        admin: { permissions: ["*"] }
-        member: { permissions: ["projects:read"] }
+      message: pong from team-tasks
 
 routes:
   /admin/**: { guard: [authenticated, "role:admin"] }
