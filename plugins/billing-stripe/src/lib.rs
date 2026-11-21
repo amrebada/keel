@@ -181,6 +181,17 @@ pub struct Service {
     ns: String,
 }
 
+/// A subscription change from a webhook.
+struct Update<'a> {
+    tenant: &'a str,
+    customer: Option<&'a str>,
+    subscription: Option<&'a str>,
+    plan: Option<&'a str>,
+    status: &'a str,
+    period_end: Option<i64>,
+    cancel_at_end: bool,
+}
+
 /// A tenant's subscription as stored.
 #[derive(Debug, Clone)]
 struct Sub {
@@ -340,16 +351,16 @@ impl Service {
         Ok((user, tenant))
     }
 
-    async fn upsert(
-        &self,
-        tenant: &str,
-        customer: Option<&str>,
-        subscription: Option<&str>,
-        plan: Option<&str>,
-        status: &str,
-        period_end: Option<i64>,
-        cancel_at_end: bool,
-    ) -> Result<(), ApiError> {
+    async fn upsert(&self, u: Update<'_>) -> Result<(), ApiError> {
+        let Update {
+            tenant,
+            customer,
+            subscription,
+            plan,
+            status,
+            period_end,
+            cancel_at_end,
+        } = u;
         if let Some(c) = customer {
             let have = self
                 .sql
@@ -478,15 +489,15 @@ impl Service {
                 );
                 match tenant {
                     Some(tenant) if obj["mode"] == "subscription" => {
-                        self.upsert(
-                            &tenant,
-                            obj["customer"].as_str(),
-                            obj["subscription"].as_str(),
-                            obj["metadata"]["plan"].as_str(),
-                            if paid { "active" } else { "incomplete" },
-                            None,
-                            false,
-                        )
+                        self.upsert(Update {
+                            tenant: &tenant,
+                            customer: obj["customer"].as_str(),
+                            subscription: obj["subscription"].as_str(),
+                            plan: obj["metadata"]["plan"].as_str(),
+                            status: if paid { "active" } else { "incomplete" },
+                            period_end: None,
+                            cancel_at_end: false,
+                        })
                         .await?;
                         true
                     }
@@ -519,15 +530,15 @@ impl Service {
                     .or_else(|| item["current_period_end"].as_i64());
                 match tenant {
                     Some(tenant) => {
-                        self.upsert(
-                            &tenant,
-                            Some(customer),
-                            obj["id"].as_str(),
-                            plan.as_deref(),
+                        self.upsert(Update {
+                            tenant: &tenant,
+                            customer: Some(customer),
+                            subscription: obj["id"].as_str(),
+                            plan: plan.as_deref(),
                             status,
                             period_end,
-                            obj["cancel_at_period_end"].as_bool().unwrap_or(false),
-                        )
+                            cancel_at_end: obj["cancel_at_period_end"].as_bool().unwrap_or(false),
+                        })
                         .await?;
                         true
                     }
