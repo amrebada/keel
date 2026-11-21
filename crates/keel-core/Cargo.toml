@@ -23,6 +23,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 keel-plugin-ping = { path = "../../plugins/ping" }
+keel-providers = { path = "../keel-providers" }
 async-trait.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 tower.workspace = true

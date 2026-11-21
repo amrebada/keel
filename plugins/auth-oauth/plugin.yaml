@@ -1,0 +1,95 @@
+id: auth-oauth
+version: 0.1.0
+summary: Social login (OAuth2/OIDC) with presets for Google, Apple, Facebook, LinkedIn, GitHub, Microsoft and X; links accounts by verified email.
+requires:
+  host: "^0.1"
+  capabilities: [sql, http-client, secrets, cache, crypto, log]
+  plugins:
+    auth-core: "^0.1"
+provides:
+  routes:
+    - GET /auth/oauth/providers
+    - GET /auth/oauth/{provider}/start
+    - GET /auth/oauth/{provider}/callback
+    - POST /auth/oauth/{provider}/callback
+  events: [auth.oauth.linked]
+config: config.schema.json
+runtime_config: []
+migrations: built-in
+degrade_level: warn
+setup:
+  - id: google-client
+    title: Create a Google OAuth client
+    kind: external-account
+    when: config.providers.google
+    steps:
+      - "Open https://console.cloud.google.com/apis/credentials"
+      - "Create credentials > OAuth client ID, type Web application"
+      - "Add the redirect URI {config.redirect_base_url}/auth/oauth/google/callback"
+      - "Copy the client ID and secret"
+    produces: [secret:OAUTH_GOOGLE_CLIENT_ID, secret:OAUTH_GOOGLE_CLIENT_SECRET]
+    blocks: ["/auth/oauth/google/*"]
+  - id: apple-key
+    title: Apple Developer account with a Sign in with Apple key
+    kind: external-account
+    when: config.providers.apple
+    requires_paid_account: true
+    steps:
+      - "Join the Apple Developer Program (paid) at https://developer.apple.com/programs/"
+      - "Create an App ID with Sign in with Apple, then a Services ID (this is the client ID)"
+      - "Set the return URL to {config.redirect_base_url}/auth/oauth/apple/callback"
+      - "Create a key with Sign in with Apple, download the .p8 file, note the Key ID and your Team ID"
+    produces: [secret:OAUTH_APPLE_CLIENT_ID, secret:OAUTH_APPLE_TEAM_ID, secret:OAUTH_APPLE_KEY_ID, secret:OAUTH_APPLE_PRIVATE_KEY]
+    verify: { type: plugin-check }
+    blocks: ["/auth/oauth/apple/*"]
+  - id: facebook-app
+    title: Create a Facebook app with Facebook Login
+    kind: external-account
+    when: config.providers.facebook
+    steps:
+      - "Open https://developers.facebook.com/apps and create an app (type Consumer)"
+      - "Add Facebook Login; set the redirect URI {config.redirect_base_url}/auth/oauth/facebook/callback"
+      - "Copy the App ID and App Secret"
+    produces: [secret:OAUTH_FACEBOOK_CLIENT_ID, secret:OAUTH_FACEBOOK_CLIENT_SECRET]
+    blocks: ["/auth/oauth/facebook/*"]
+  - id: linkedin-app
+    title: Create a LinkedIn app with Sign In with LinkedIn using OpenID Connect
+    kind: external-account
+    when: config.providers.linkedin
+    steps:
+      - "Open https://www.linkedin.com/developers/apps and create an app"
+      - "Add the product Sign In with LinkedIn using OpenID Connect"
+      - "Add the redirect URL {config.redirect_base_url}/auth/oauth/linkedin/callback"
+      - "Copy the client ID and secret"
+    produces: [secret:OAUTH_LINKEDIN_CLIENT_ID, secret:OAUTH_LINKEDIN_CLIENT_SECRET]
+    blocks: ["/auth/oauth/linkedin/*"]
+  - id: github-app
+    title: Create a GitHub OAuth app
+    kind: external-account
+    when: config.providers.github
+    steps:
+      - "Open https://github.com/settings/developers and choose New OAuth App"
+      - "Set the callback URL {config.redirect_base_url}/auth/oauth/github/callback"
+      - "Generate a client secret; copy it with the client ID"
+    produces: [secret:OAUTH_GITHUB_CLIENT_ID, secret:OAUTH_GITHUB_CLIENT_SECRET]
+    blocks: ["/auth/oauth/github/*"]
+  - id: microsoft-app
+    title: Register a Microsoft Entra application
+    kind: external-account
+    when: config.providers.microsoft
+    steps:
+      - "Open https://entra.microsoft.com > App registrations > New registration"
+      - "Allow personal and work accounts; add the Web redirect URI {config.redirect_base_url}/auth/oauth/microsoft/callback"
+      - "Create a client secret under Certificates & secrets; copy it with the Application (client) ID"
+    produces: [secret:OAUTH_MICROSOFT_CLIENT_ID, secret:OAUTH_MICROSOFT_CLIENT_SECRET]
+    blocks: ["/auth/oauth/microsoft/*"]
+  - id: x-app
+    title: Create an X (Twitter) app with OAuth 2.0
+    kind: external-account
+    when: config.providers.x
+    steps:
+      - "Open https://developer.x.com/en/portal/dashboard and create a project and app"
+      - "Turn on OAuth 2.0 (type Web App) with the callback {config.redirect_base_url}/auth/oauth/x/callback"
+      - "Copy the OAuth 2.0 client ID and secret. X does not share email addresses."
+    produces: [secret:OAUTH_X_CLIENT_ID, secret:OAUTH_X_CLIENT_SECRET]
+    blocks: ["/auth/oauth/x/*"]
