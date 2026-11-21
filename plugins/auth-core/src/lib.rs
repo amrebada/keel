@@ -97,7 +97,9 @@ fn accepted() -> Reply {
     // Same answer whether or not the account exists.
     Ok((
         StatusCode::ACCEPTED,
-        Json(json!({ "accepted": true, "message": "if an account exists for this address, an email is on its way" })),
+        Json(
+            json!({ "accepted": true, "message": "if an account exists for this address, an email is on its way" }),
+        ),
     ))
 }
 
@@ -227,7 +229,9 @@ impl Plugin for AuthCore {
         )?;
         r.get(
             "/auth/magic-link/verify",
-            handler!(svc, |s, q: Query<TokenBody>| ok(json!(s.use_magic_link(&q.token).await?))),
+            handler!(svc, |s, q: Query<TokenBody>| ok(json!(
+                s.use_magic_link(&q.token).await?
+            ))),
         )?;
         r.post(
             "/auth/magic-link/verify",

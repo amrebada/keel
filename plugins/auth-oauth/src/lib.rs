@@ -83,7 +83,10 @@ impl Settings {
                 .unwrap_or("http://localhost:8080")
                 .trim_end_matches('/')
                 .to_string(),
-            success_redirect: c.get("success_redirect").and_then(Value::as_str).map(str::to_string),
+            success_redirect: c
+                .get("success_redirect")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             link_by_email: c.get("link_by_email").and_then(Value::as_bool).unwrap_or(true),
             providers,
         }
@@ -252,7 +255,8 @@ impl Engine {
             .map_err(|e| bad_gateway("provider_unreachable", format!("{what}: {e}")))?;
         let body: Value = serde_json::from_slice(&res.body).unwrap_or(Value::Null);
         if res.status >= 400 {
-            self.log.warn(&format!("{what} failed with {}: {body}", res.status));
+            self.log
+                .warn(&format!("{what} failed with {}: {body}", res.status));
             return Err(bad_gateway(
                 "provider_error",
                 format!("{what} failed ({}); try again", res.status),
@@ -283,8 +287,8 @@ impl Engine {
                 form.push(("client_secret", client_secret));
             }
             ClientAuth::Basic => {
-                let basic = base64::engine::general_purpose::STANDARD
-                    .encode(format!("{client_id}:{client_secret}"));
+                let basic =
+                    base64::engine::general_purpose::STANDARD.encode(format!("{client_id}:{client_secret}"));
                 headers.push(("Authorization".into(), format!("Basic {basic}")));
                 form.push(("client_id", client_id.clone()));
             }
@@ -325,9 +329,17 @@ impl Engine {
         .await
     }
 
-    async fn profile(&self, key: &str, tokens: &Value, apple_user: Option<&str>) -> Result<ProviderProfile, ApiError> {
+    async fn profile(
+        &self,
+        key: &str,
+        tokens: &Value,
+        apple_user: Option<&str>,
+    ) -> Result<ProviderProfile, ApiError> {
         let p = self.provider(key)?;
-        let at = tokens.get("access_token").and_then(Value::as_str).unwrap_or_default();
+        let at = tokens
+            .get("access_token")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let mut prof = match p.preset.profile {
             Profile::Oidc => {
                 let u = self.get(&p.userinfo_url, at, "userinfo").await?;
@@ -418,7 +430,10 @@ impl Engine {
         let rows = self
             .sql
             .query(
-                &format!("SELECT user_id FROM {} WHERE provider = ? AND subject = ?", self.table),
+                &format!(
+                    "SELECT user_id FROM {} WHERE provider = ? AND subject = ?",
+                    self.table
+                ),
                 &[json!(key), json!(subject)],
             )
             .await?;
@@ -500,7 +515,9 @@ impl Engine {
             let detail = params.get("error_description").cloned().unwrap_or_default();
             return Err(ApiError::bad_request(
                 "provider_denied",
-                format!("sign-in was cancelled or refused: {err} {detail}").trim().to_string(),
+                format!("sign-in was cancelled or refused: {err} {detail}")
+                    .trim()
+                    .to_string(),
             ));
         }
         let state = params
@@ -511,7 +528,9 @@ impl Engine {
             .get("code")
             .ok_or_else(|| ApiError::bad_request("missing_code", "the provider sent no code"))?;
         let tokens = self.exchange(key, code, &verifier).await?;
-        let prof = self.profile(key, &tokens, params.get("user").map(String::as_str)).await?;
+        let prof = self
+            .profile(key, &tokens, params.get("user").map(String::as_str))
+            .await?;
         let user_id = self.account(key, &prof).await?;
         self.identity.login(&user_id).await
     }
@@ -536,7 +555,11 @@ impl Engine {
             }
             Err(e) => form_encode(&[("error", e.code), ("error_description", e.message)]),
         };
-        (StatusCode::FOUND, [(header::LOCATION, format!("{base}#{fragment}"))]).into_response()
+        (
+            StatusCode::FOUND,
+            [(header::LOCATION, format!("{base}#{fragment}"))],
+        )
+            .into_response()
     }
 }
 

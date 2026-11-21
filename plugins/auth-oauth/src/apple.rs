@@ -10,7 +10,13 @@ use serde_json::json;
 
 /// Builds the client secret. `pem` is the .p8 file content; `\n` escapes
 /// (common when a key is stored in one env var line) are accepted.
-pub fn client_secret(team_id: &str, key_id: &str, client_id: &str, pem: &str, now: u64) -> Result<String, String> {
+pub fn client_secret(
+    team_id: &str,
+    key_id: &str,
+    client_id: &str,
+    pem: &str,
+    now: u64,
+) -> Result<String, String> {
     let pem = pem.replace("\\n", "\n");
     let key = SigningKey::from_pkcs8_pem(pem.trim())
         .map_err(|e| format!("OAUTH_APPLE_PRIVATE_KEY is not a valid .p8 key: {e}"))?;

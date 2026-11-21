@@ -1238,6 +1238,7 @@ dependencies = [
  "clap",
  "keel-core",
  "keel-plugin-auth-core",
+ "keel-plugin-auth-mfa",
  "keel-plugin-auth-oauth",
  "keel-plugin-ping",
  "keel-providers",
@@ -1290,6 +1291,26 @@ dependencies = [
  "tokio",
  "tower",
  "uuid",
+]
+
+[[package]]
+name = "keel-plugin-auth-mfa"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hmac",
+ "http-body-util",
+ "keel-core",
+ "keel-plugin-auth-core",
+ "keel-providers",
+ "keel-sdk",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "tokio",
+ "tower",
+ "urlencoding",
 ]
 
 [[package]]

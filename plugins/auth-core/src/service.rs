@@ -44,7 +44,9 @@ impl Settings {
                 .to_string()
         };
         Self {
-            app_url: s("app_url", "http://localhost:8080").trim_end_matches('/').to_string(),
+            app_url: s("app_url", "http://localhost:8080")
+                .trim_end_matches('/')
+                .to_string(),
             verify_link: link("verify", "{app_url}/auth/verify?token={token}"),
             reset_link: link("reset", "{app_url}/reset-password?token={token}"),
             magic_link_url: link("magic_link", "{app_url}/auth/magic-link/verify?token={token}"),
@@ -59,7 +61,9 @@ impl Settings {
     }
 
     fn link(&self, template: &str, token: &str) -> String {
-        template.replace("{app_url}", &self.app_url).replace("{token}", token)
+        template
+            .replace("{app_url}", &self.app_url)
+            .replace("{token}", token)
     }
 }
 
@@ -84,19 +88,26 @@ pub fn now() -> u64 {
 }
 
 fn sha256_hex(s: &str) -> String {
-    Sha256::digest(s.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(s.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub fn normalize_email(raw: &str) -> Result<String, ApiError> {
     let e = raw.trim().to_lowercase();
     let valid = e.len() <= 254
-        && e.split_once('@')
-            .is_some_and(|(l, d)| !l.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.'))
+        && e.split_once('@').is_some_and(|(l, d)| {
+            !l.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.')
+        })
         && !e.contains(char::is_whitespace);
     if valid {
         Ok(e)
     } else {
-        Err(ApiError::bad_request("invalid_email", "that does not look like an email address"))
+        Err(ApiError::bad_request(
+            "invalid_email",
+            "that does not look like an email address",
+        ))
     }
 }
 
@@ -159,7 +170,10 @@ impl Service {
             ));
         }
         if n > 1024 {
-            return Err(ApiError::bad_request("weak_password", "use at most 1024 characters"));
+            return Err(ApiError::bad_request(
+                "weak_password",
+                "use at most 1024 characters",
+            ));
         }
         Ok(())
     }
@@ -187,7 +201,10 @@ impl Service {
     ) -> Result<AuthUser, ApiError> {
         if let Some(e) = email {
             if self.user_row("email", e).await?.is_some() {
-                return Err(ApiError::conflict("email_taken", "an account with this email already exists"));
+                return Err(ApiError::conflict(
+                    "email_taken",
+                    "an account with this email already exists",
+                ));
             }
         }
         let id = uuid::Uuid::new_v4().to_string();
@@ -222,8 +239,11 @@ impl Service {
             email_verified: verified,
             name: name.map(str::to_string),
         };
-        self.emit("auth.user.created", json!({ "user_id": user.id, "email": user.email }))
-            .await;
+        self.emit(
+            "auth.user.created",
+            json!({ "user_id": user.id, "email": user.email }),
+        )
+        .await;
         Ok(user)
     }
 
@@ -295,7 +315,9 @@ impl Service {
         let Some(email) = &user.email else {
             return Ok(());
         };
-        let token = self.new_token("verify", &user.id, self.settings.token_ttl).await?;
+        let token = self
+            .new_token("verify", &user.id, self.settings.token_ttl)
+            .await?;
         let link = self.settings.link(&self.settings.verify_link, &token);
         self.send(
             email,
@@ -309,7 +331,10 @@ impl Service {
 
     pub async fn signup(&self, email: &str, password: &str, name: Option<&str>) -> Result<Value, ApiError> {
         if !self.settings.signup {
-            return Err(ApiError::forbidden("signup_disabled", "new accounts are not accepted"));
+            return Err(ApiError::forbidden(
+                "signup_disabled",
+                "new accounts are not accepted",
+            ));
         }
         let email = normalize_email(email)?;
         self.check_password(password)?;
@@ -386,8 +411,16 @@ impl Service {
             )
             .await?;
         let row = rows.first().ok_or_else(invalid)?;
-        let sid = row.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
-        let user_id = row.get("user_id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let sid = row
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let user_id = row
+            .get("user_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         // Rotate: the old refresh token stops working.
         let new_refresh = self.random_token();
         let n = self
@@ -432,7 +465,10 @@ impl Service {
         let rows = self
             .sql
             .query(
-                &format!("SELECT user_id FROM {} WHERE refresh_hash = ?", self.t("sessions")),
+                &format!(
+                    "SELECT user_id FROM {} WHERE refresh_hash = ?",
+                    self.t("sessions")
+                ),
                 &[json!(sha256_hex(refresh_token.trim()))],
             )
             .await?;
@@ -445,8 +481,13 @@ impl Service {
                 &[json!(now() as i64), json!(sha256_hex(refresh_token.trim()))],
             )
             .await?;
-        if let Some(uid) = rows.first().and_then(|r| r.get("user_id")).and_then(Value::as_str) {
-            self.emit("auth.logout", json!({ "user_id": uid, "all": false })).await;
+        if let Some(uid) = rows
+            .first()
+            .and_then(|r| r.get("user_id"))
+            .and_then(Value::as_str)
+        {
+            self.emit("auth.logout", json!({ "user_id": uid, "all": false }))
+                .await;
         }
         Ok(())
     }
@@ -468,7 +509,8 @@ impl Service {
     pub async fn logout_all(&self, access_token: &str) -> Result<Value, ApiError> {
         let c = IdentityProvider::verify_access_token(self, access_token).await?;
         let n = self.revoke_all(&c.sub).await?;
-        self.emit("auth.logout", json!({ "user_id": c.sub, "all": true })).await;
+        self.emit("auth.logout", json!({ "user_id": c.sub, "all": true }))
+            .await;
         Ok(json!({ "revoked_sessions": n }))
     }
 
@@ -484,7 +526,9 @@ impl Service {
         let email = normalize_email(email)?;
         if let Some(row) = self.user_row("email", &email).await? {
             let user = user_from_row(&row);
-            let token = self.new_token("reset", &user.id, self.settings.token_ttl.min(3600)).await?;
+            let token = self
+                .new_token("reset", &user.id, self.settings.token_ttl.min(3600))
+                .await?;
             let link = self.settings.link(&self.settings.reset_link, &token);
             self.send(
                 &email,
@@ -514,13 +558,17 @@ impl Service {
             .await?;
         // A reset ends every session, in case the old password leaked.
         let revoked = self.revoke_all(&user_id).await?;
-        self.emit("auth.password.reset", json!({ "user_id": user_id })).await;
+        self.emit("auth.password.reset", json!({ "user_id": user_id }))
+            .await;
         Ok(json!({ "reset": true, "revoked_sessions": revoked }))
     }
 
     pub async fn request_magic_link(&self, email: &str) -> Result<(), ApiError> {
         if !self.settings.magic_link {
-            return Err(ApiError::forbidden("magic_link_disabled", "magic links are turned off"));
+            return Err(ApiError::forbidden(
+                "magic_link_disabled",
+                "magic links are turned off",
+            ));
         }
         let email = normalize_email(email)?;
         if let Some(row) = self.user_row("email", &email).await? {
@@ -531,7 +579,10 @@ impl Service {
             self.send(
                 &email,
                 "Your sign-in link",
-                format!("Sign in by opening this link:\n\n{link}\n\nIt works once, for {} minutes.", ttl / 60),
+                format!(
+                    "Sign in by opening this link:\n\n{link}\n\nIt works once, for {} minutes.",
+                    ttl / 60
+                ),
             )
             .await?;
         }
@@ -540,7 +591,10 @@ impl Service {
 
     pub async fn use_magic_link(&self, token: &str) -> Result<LoginOutcome, ApiError> {
         if !self.settings.magic_link {
-            return Err(ApiError::forbidden("magic_link_disabled", "magic links are turned off"));
+            return Err(ApiError::forbidden(
+                "magic_link_disabled",
+                "magic links are turned off",
+            ));
         }
         let user_id = self
             .use_token("magic", token)
@@ -570,7 +624,8 @@ impl IdentityProvider for Service {
         name: Option<&str>,
     ) -> Result<AuthUser, ApiError> {
         let email = email.map(normalize_email).transpose()?;
-        self.insert_user(email.as_deref(), email_verified, name, None).await
+        self.insert_user(email.as_deref(), email_verified, name, None)
+            .await
     }
 
     async fn mark_email_verified(&self, user_id: &str) -> Result<(), ApiError> {
@@ -585,7 +640,8 @@ impl IdentityProvider for Service {
             )
             .await?;
         if n > 0 {
-            self.emit("auth.user.verified", json!({ "user_id": user_id })).await;
+            self.emit("auth.user.verified", json!({ "user_id": user_id }))
+                .await;
         }
         Ok(())
     }
@@ -624,7 +680,8 @@ impl IdentityProvider for Service {
                 ],
             )
             .await?;
-        self.emit("auth.login", json!({ "user_id": user_id, "session_id": sid })).await;
+        self.emit("auth.login", json!({ "user_id": user_id, "session_id": sid }))
+            .await;
         self.tokens_for(user_id, &sid, refresh)
     }
 
@@ -652,7 +709,10 @@ impl IdentityProvider for Service {
             )
             .await?;
         if rows.is_empty() {
-            return Err(ApiError::unauthorized("session_revoked", "this session has ended; log in again"));
+            return Err(ApiError::unauthorized(
+                "session_revoked",
+                "this session has ended; log in again",
+            ));
         }
         Ok(claims)
     }

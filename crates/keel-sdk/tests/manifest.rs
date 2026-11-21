@@ -55,7 +55,10 @@ fn reports_schema_problems_with_paths() {
         "{e}"
     );
     assert!(e.contains("id: \"Bad_Id\" does not match"), "{e}");
-    assert!(e.contains("version: \"one\" does not match"), "first pass reports a bad version: {e}");
+    assert!(
+        e.contains("version: \"one\" does not match"),
+        "first pass reports a bad version: {e}"
+    );
     assert!(e.contains("requires.capabilities[1]"), "{e}");
     assert!(e.contains("provides.routes[0]"), "{e}");
 }

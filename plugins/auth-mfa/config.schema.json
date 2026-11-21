@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "issuer": { "type": "string", "minLength": 1, "default": "Keel", "description": "Name shown in authenticator apps." },
+    "recovery_codes": { "type": "integer", "minimum": 5, "maximum": 20, "default": 10 },
+    "max_failures": { "type": "integer", "minimum": 3, "maximum": 20, "default": 5, "description": "Wrong codes in a row before a 5 minute lock." }
+  }
+}

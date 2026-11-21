@@ -51,7 +51,9 @@ async fn app(db_url: &str, with_key: bool) -> App {
         secrets: Arc::new(MapSecrets(secrets)),
         state_file: None,
     };
-    let host = Host::start_with(config, &registry, &providers, options).await.unwrap();
+    let host = Host::start_with(config, &registry, &providers, options)
+        .await
+        .unwrap();
     App {
         router: host.router(),
         email,
@@ -69,7 +71,12 @@ impl App {
         } else {
             Body::from(body.to_string())
         };
-        let res = self.router.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+        let res = self
+            .router
+            .clone()
+            .oneshot(req.body(body).unwrap())
+            .await
+            .unwrap();
         let status = res.status();
         let bytes = res.into_body().collect().await.unwrap().to_bytes();
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
@@ -78,9 +85,17 @@ impl App {
     /// The token in the last email whose link contains `marker`.
     fn token_from_email(&self, marker: &str) -> String {
         let sent = self.email.sent();
-        let text = &sent.iter().rev().find(|m| m.text.contains(marker)).expect("email sent").text;
+        let text = &sent
+            .iter()
+            .rev()
+            .find(|m| m.text.contains(marker))
+            .expect("email sent")
+            .text;
         let start = text.find("token=").unwrap() + 6;
-        text[start..].chars().take_while(|c| c.is_ascii_hexdigit()).collect()
+        text[start..]
+            .chars()
+            .take_while(|c| c.is_ascii_hexdigit())
+            .collect()
     }
 }
 
@@ -89,31 +104,73 @@ async fn full_flow(db_url: &str) {
     let email = format!("ann+{}@example.com", std::process::id());
 
     let (s, b) = a
-        .call("POST", "/auth/signup", json!({ "email": email.to_uppercase(), "password": "secretpass", "name": "Ann" }), None)
+        .call(
+            "POST",
+            "/auth/signup",
+            json!({ "email": email.to_uppercase(), "password": "secretpass", "name": "Ann" }),
+            None,
+        )
         .await;
     assert_eq!(s, StatusCode::CREATED, "{b}");
     assert_eq!(b["user"]["email"], email);
     assert_eq!(b["user"]["email_verified"], false);
 
-    let (s, b) = a.call("POST", "/auth/signup", json!({ "email": email, "password": "secretpass" }), None).await;
-    assert_eq!((s, b["error"]["code"].as_str()), (StatusCode::CONFLICT, Some("email_taken")));
-    let (s, b) = a.call("POST", "/auth/signup", json!({ "email": "x@y.co", "password": "short" }), None).await;
-    assert_eq!((s, b["error"]["code"].as_str()), (StatusCode::BAD_REQUEST, Some("weak_password")));
+    let (s, b) = a
+        .call(
+            "POST",
+            "/auth/signup",
+            json!({ "email": email, "password": "secretpass" }),
+            None,
+        )
+        .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("email_taken"))
+    );
+    let (s, b) = a
+        .call(
+            "POST",
+            "/auth/signup",
+            json!({ "email": "x@y.co", "password": "short" }),
+            None,
+        )
+        .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("weak_password"))
+    );
 
     let login = json!({ "email": email, "password": "secretpass" });
     let (s, b) = a.call("POST", "/auth/login", login.clone(), None).await;
-    assert_eq!((s, b["error"]["code"].as_str()), (StatusCode::FORBIDDEN, Some("email_not_verified")));
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("email_not_verified"))
+    );
 
     let link = a.email.sent().last().unwrap().text.clone();
     assert!(link.contains("https://app.test/auth/verify?token="), "{link}");
     let token = a.token_from_email("/auth/verify?token=");
-    let (s, _) = a.call("POST", "/auth/verify", json!({ "token": token }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/verify", json!({ "token": token }), None)
+        .await;
     assert_eq!(s, StatusCode::OK);
-    let (s, _) = a.call("POST", "/auth/verify", json!({ "token": token }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/verify", json!({ "token": token }), None)
+        .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "tokens are single use");
 
-    let (s, b) = a.call("POST", "/auth/login", json!({ "email": email, "password": "wrongpass" }), None).await;
-    assert_eq!((s, b["error"]["code"].as_str()), (StatusCode::UNAUTHORIZED, Some("invalid_credentials")));
+    let (s, b) = a
+        .call(
+            "POST",
+            "/auth/login",
+            json!({ "email": email, "password": "wrongpass" }),
+            None,
+        )
+        .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::UNAUTHORIZED, Some("invalid_credentials"))
+    );
     let (s, b) = a.call("POST", "/auth/login", login.clone(), None).await;
     assert_eq!(s, StatusCode::OK, "{b}");
     let access = b["access_token"].as_str().unwrap().to_string();
@@ -121,20 +178,32 @@ async fn full_flow(db_url: &str) {
     assert_eq!(b["token_type"], "Bearer");
 
     let (s, b) = a.call("GET", "/auth/me", Value::Null, Some(&access)).await;
-    assert_eq!((s, b["user"]["email_verified"].as_bool()), (StatusCode::OK, Some(true)));
+    assert_eq!(
+        (s, b["user"]["email_verified"].as_bool()),
+        (StatusCode::OK, Some(true))
+    );
     let (s, _) = a.call("GET", "/auth/me", Value::Null, None).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
 
-    let (s, b) = a.call("POST", "/auth/refresh", json!({ "refresh_token": refresh }), None).await;
+    let (s, b) = a
+        .call("POST", "/auth/refresh", json!({ "refresh_token": refresh }), None)
+        .await;
     assert_eq!(s, StatusCode::OK, "{b}");
     let refresh2 = b["refresh_token"].as_str().unwrap().to_string();
-    let (s, _) = a.call("POST", "/auth/refresh", json!({ "refresh_token": refresh }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/refresh", json!({ "refresh_token": refresh }), None)
+        .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "old refresh token stops working");
 
-    let (s, _) = a.call("POST", "/auth/logout", json!({ "refresh_token": refresh2 }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/logout", json!({ "refresh_token": refresh2 }), None)
+        .await;
     assert_eq!(s, StatusCode::OK);
     let (s, b) = a.call("GET", "/auth/me", Value::Null, Some(&access)).await;
-    assert_eq!((s, b["error"]["code"].as_str()), (StatusCode::UNAUTHORIZED, Some("session_revoked")));
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::UNAUTHORIZED, Some("session_revoked"))
+    );
 
     // Two sessions, then logout everywhere.
     let (_, b1) = a.call("POST", "/auth/login", login.clone(), None).await;
@@ -142,42 +211,81 @@ async fn full_flow(db_url: &str) {
     let t1 = b1["access_token"].as_str().unwrap();
     let (s, b) = a.call("POST", "/auth/logout-all", Value::Null, Some(t1)).await;
     assert_eq!((s, b["revoked_sessions"].as_u64()), (StatusCode::OK, Some(2)));
-    let (s, _) = a.call("GET", "/auth/me", Value::Null, b2["access_token"].as_str()).await;
+    let (s, _) = a
+        .call("GET", "/auth/me", Value::Null, b2["access_token"].as_str())
+        .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
 
     // Password reset ends sessions and changes the password.
     let (_, b) = a.call("POST", "/auth/login", login.clone(), None).await;
     let live = b["access_token"].as_str().unwrap().to_string();
-    let (s, _) = a.call("POST", "/auth/password/forgot", json!({ "email": email }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/password/forgot", json!({ "email": email }), None)
+        .await;
     assert_eq!(s, StatusCode::ACCEPTED);
-    let (s, _) = a.call("POST", "/auth/password/forgot", json!({ "email": "nobody@example.com" }), None).await;
+    let (s, _) = a
+        .call(
+            "POST",
+            "/auth/password/forgot",
+            json!({ "email": "nobody@example.com" }),
+            None,
+        )
+        .await;
     assert_eq!(s, StatusCode::ACCEPTED, "no account enumeration");
     let reset = a.token_from_email("reset-password?token=");
     let (s, b) = a
-        .call("POST", "/auth/password/reset", json!({ "token": reset, "password": "brandnewpass" }), None)
+        .call(
+            "POST",
+            "/auth/password/reset",
+            json!({ "token": reset, "password": "brandnewpass" }),
+            None,
+        )
         .await;
-    assert_eq!((s, b["revoked_sessions"].as_u64()), (StatusCode::OK, Some(1)), "{b}");
+    assert_eq!(
+        (s, b["revoked_sessions"].as_u64()),
+        (StatusCode::OK, Some(1)),
+        "{b}"
+    );
     let (s, _) = a.call("GET", "/auth/me", Value::Null, Some(&live)).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
     let (s, _) = a.call("POST", "/auth/login", login.clone(), None).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "old password no longer works");
     let (s, _) = a
-        .call("POST", "/auth/login", json!({ "email": email, "password": "brandnewpass" }), None)
+        .call(
+            "POST",
+            "/auth/login",
+            json!({ "email": email, "password": "brandnewpass" }),
+            None,
+        )
         .await;
     assert_eq!(s, StatusCode::OK);
 
     // Magic link.
-    let (s, _) = a.call("POST", "/auth/magic-link", json!({ "email": email }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/magic-link", json!({ "email": email }), None)
+        .await;
     assert_eq!(s, StatusCode::ACCEPTED);
     let magic = a.token_from_email("magic-link/verify?token=");
-    let (s, b) = a.call("GET", &format!("/auth/magic-link/verify?token={magic}"), Value::Null, None).await;
+    let (s, b) = a
+        .call(
+            "GET",
+            &format!("/auth/magic-link/verify?token={magic}"),
+            Value::Null,
+            None,
+        )
+        .await;
     assert_eq!(s, StatusCode::OK);
     assert!(b["access_token"].is_string());
-    let (s, _) = a.call("POST", "/auth/magic-link/verify", json!({ "token": magic }), None).await;
+    let (s, _) = a
+        .call("POST", "/auth/magic-link/verify", json!({ "token": magic }), None)
+        .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "magic links are single use");
 
     let (s, b) = a.call("POST", "/auth/login", json!("nope"), None).await;
-    assert_eq!((s, b["error"]["code"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_body")));
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_body"))
+    );
 }
 
 #[tokio::test]
@@ -205,7 +313,12 @@ async fn full_flow_mysql() {
 async fn routes_are_blocked_until_the_signing_key_is_set() {
     let a = app("sqlite::memory:", false).await;
     let (s, b) = a
-        .call("POST", "/auth/signup", json!({ "email": "a@b.co", "password": "secretpass" }), None)
+        .call(
+            "POST",
+            "/auth/signup",
+            json!({ "email": "a@b.co", "password": "secretpass" }),
+            None,
+        )
         .await;
     assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(b["error"]["code"], "setup_incomplete");

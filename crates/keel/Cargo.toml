@@ -24,6 +24,7 @@ tracing-subscriber.workspace = true
 
 # keel:plugins (managed by `keel new-plugin`; one line per compiled-in plugin)
 keel-plugin-auth-core = { path = "../../plugins/auth-core" }
+keel-plugin-auth-mfa = { path = "../../plugins/auth-mfa" }
 keel-plugin-auth-oauth = { path = "../../plugins/auth-oauth" }
 keel-plugin-ping = { path = "../../plugins/ping" }
 # keel:plugins:end
