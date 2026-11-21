@@ -22,7 +22,12 @@ struct App {
 
 async fn app(db_url: &str, with_key: bool) -> App {
     let sql = SqlProvider::connect(db_url, Some(2)).await.unwrap();
-    for t in ["auth_core_users", "auth_core_sessions", "auth_core_tokens"] {
+    for t in [
+        "auth_core_users",
+        "auth_core_sessions",
+        "auth_core_tokens",
+        "auth_core_used_refresh",
+    ] {
         let _ = sql.execute(&format!("DROP TABLE {t}"), &[]).await;
     }
     let _ = sql
@@ -190,13 +195,39 @@ async fn full_flow(db_url: &str) {
         .await;
     assert_eq!(s, StatusCode::OK, "{b}");
     let refresh2 = b["refresh_token"].as_str().unwrap().to_string();
-    let (s, _) = a
+    let access2 = b["access_token"].as_str().unwrap().to_string();
+    let (s, b) = a
         .call("POST", "/auth/refresh", json!({ "refresh_token": refresh }), None)
         .await;
-    assert_eq!(s, StatusCode::UNAUTHORIZED, "old refresh token stops working");
-
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (StatusCode::UNAUTHORIZED, Some("refresh_token_reused")),
+        "a rotated refresh token is reuse"
+    );
+    // Reuse ends the whole session: the newer tokens stop working too.
     let (s, _) = a
-        .call("POST", "/auth/logout", json!({ "refresh_token": refresh2 }), None)
+        .call(
+            "POST",
+            "/auth/refresh",
+            json!({ "refresh_token": refresh2 }),
+            None,
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    for t in [&access, &access2] {
+        let (s, b) = a.call("GET", "/auth/me", Value::Null, Some(t)).await;
+        assert_eq!(
+            (s, b["error"]["code"].as_str()),
+            (StatusCode::UNAUTHORIZED, Some("session_revoked"))
+        );
+    }
+
+    // Logout ends one session.
+    let (_, b) = a.call("POST", "/auth/login", login.clone(), None).await;
+    let access = b["access_token"].as_str().unwrap().to_string();
+    let refresh = b["refresh_token"].as_str().unwrap().to_string();
+    let (s, _) = a
+        .call("POST", "/auth/logout", json!({ "refresh_token": refresh }), None)
         .await;
     assert_eq!(s, StatusCode::OK);
     let (s, b) = a.call("GET", "/auth/me", Value::Null, Some(&access)).await;

@@ -396,6 +396,75 @@ impl Service {
         IdentityProvider::login(self, &user.id).await
     }
 
+    /// Records a rotated-away refresh token, and forgets ones older than the
+    /// refresh lifetime (their sessions have expired by then).
+    async fn remember_used(&self, hash: &str, sid: &str, t: i64) -> Result<(), ApiError> {
+        let table = self.t("used_refresh");
+        self.sql
+            .execute(
+                &format!("INSERT INTO {table} (hash, session_id, used_at) VALUES (?, ?, ?)"),
+                &[json!(hash), json!(sid), json!(t)],
+            )
+            .await?;
+        self.sql
+            .execute(
+                &format!("DELETE FROM {table} WHERE used_at < ?"),
+                &[json!(t - self.settings.refresh_ttl as i64)],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// A refresh token that was already rotated is being presented again:
+    /// someone holds a copy, so the session it belonged to is revoked.
+    async fn check_reuse(&self, hash: &str) -> Result<Option<ApiError>, ApiError> {
+        let rows = self
+            .sql
+            .query(
+                &format!("SELECT session_id FROM {} WHERE hash = ?", self.t("used_refresh")),
+                &[json!(hash)],
+            )
+            .await?;
+        let Some(sid) = rows
+            .first()
+            .and_then(|r| r.get("session_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            return Ok(None);
+        };
+        let sessions = self.t("sessions");
+        let owner = self
+            .sql
+            .query(
+                &format!("SELECT user_id FROM {sessions} WHERE id = ?"),
+                &[json!(sid)],
+            )
+            .await?;
+        self.sql
+            .execute(
+                &format!("UPDATE {sessions} SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL"),
+                &[json!(now() as i64), json!(sid)],
+            )
+            .await?;
+        let user_id = owner
+            .first()
+            .and_then(|r| r.get("user_id"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        self.log
+            .warn(&format!("refresh token reused; session {sid} revoked"));
+        self.emit(
+            "auth.logout",
+            json!({ "user_id": user_id, "session_id": sid, "reason": "refresh_token_reused" }),
+        )
+        .await;
+        Ok(Some(ApiError::unauthorized(
+            "refresh_token_reused",
+            "this refresh token was already used, so the session was ended; log in again",
+        )))
+    }
+
     pub async fn refresh(&self, refresh_token: &str) -> Result<Tokens, ApiError> {
         let invalid = || ApiError::unauthorized("invalid_refresh_token", "log in again");
         let old = sha256_hex(refresh_token.trim());
@@ -410,7 +479,9 @@ impl Service {
                 &[json!(old), json!(t)],
             )
             .await?;
-        let row = rows.first().ok_or_else(invalid)?;
+        let Some(row) = rows.first() else {
+            return Err(self.check_reuse(&old).await?.unwrap_or_else(invalid));
+        };
         let sid = row
             .get("id")
             .and_then(Value::as_str)
@@ -441,6 +512,7 @@ impl Service {
         if n == 0 {
             return Err(invalid());
         }
+        self.remember_used(&old, &sid, t).await?;
         self.tokens_for(&user_id, &sid, new_refresh)
     }
 
