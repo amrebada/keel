@@ -277,3 +277,23 @@ impl Emitter {
         Ok(self.hooks.emit(Event::new(name, payload)).await)
     }
 }
+
+/// What a plugin built in its last `init`. Unlike `OnceLock`, a later
+/// `init` (a live reconfigure) replaces it.
+pub struct Current<T: ?Sized>(std::sync::RwLock<Option<Arc<T>>>);
+
+impl<T: ?Sized> Default for Current<T> {
+    fn default() -> Self {
+        Self(std::sync::RwLock::new(None))
+    }
+}
+
+impl<T: ?Sized> Current<T> {
+    pub fn get(&self) -> Option<Arc<T>> {
+        self.0.read().expect("current lock").clone()
+    }
+
+    pub fn set(&self, value: Arc<T>) {
+        *self.0.write().expect("current lock") = Some(value);
+    }
+}

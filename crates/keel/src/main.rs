@@ -1,10 +1,13 @@
 mod describe;
 mod dotenv;
+mod live_ops;
 mod mcp;
 mod ops;
 mod output;
 mod plugins;
 mod scaffold;
+#[cfg(unix)]
+mod supervisor;
 mod yaml_edit;
 
 use std::path::{Path, PathBuf};
@@ -14,8 +17,9 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
+use keel_core::live::Live;
 use keel_core::setup::SetupState;
-use keel_core::{AppConfig, Host, HostOptions, PluginRegistry, SecretSource};
+use keel_core::{AppConfig, HostOptions, PluginRegistry, SecretSource};
 use keel_providers::LayeredSecrets;
 use keel_sdk::capabilities::CapabilityProviders;
 use keel_sdk::Manifest;
@@ -44,12 +48,16 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
     },
-    /// Start the server from app.yaml.
+    /// Start the server from app.yaml. Plugins can then change live through
+    /// `keel apply` and the admin API (needs the KEEL_ADMIN_TOKEN secret).
     Serve {
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
+        /// Rollback drill: make /health answer 503 after this many seconds.
+        #[arg(long, hide = true, value_name = "SECS")]
+        drill_unhealthy_after: Option<u64>,
     },
-    /// Start the server and restart it whenever app.yaml changes.
+    /// Start the server and apply app.yaml edits live as you save.
     Dev {
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
@@ -101,6 +109,58 @@ enum Command {
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
     },
+    /// Reconcile the running server with app.yaml, live: plugins start,
+    /// stop or reconfigure with no restart and no dropped requests.
+    Apply {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        /// Server URL; defaults to server.host and server.port in app.yaml.
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// Recent changes from the server's audit log (who, what, when).
+    Audit {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long, default_value_t = 30)]
+        limit: u32,
+    },
+    /// Run the server under a supervisor that can swap in a new binary with
+    /// zero dropped requests (`keel update`) and roll back (`keel rollback`).
+    Supervise {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        /// Binary to run; defaults to this one.
+        #[arg(long)]
+        binary: Option<PathBuf>,
+        /// After a swap, watch health and errors this long and roll back on failure.
+        #[arg(long, default_value_t = 60)]
+        watch_secs: u64,
+    },
+    /// Swap the supervised server to a new binary: verify, check config,
+    /// migrate, warm up, swap, watch, and roll back automatically on failure.
+    Update {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        /// The new keel binary.
+        #[arg(long, conflicts_with = "build")]
+        binary: Option<PathBuf>,
+        /// Run `cargo build --release --bin keel` and use target/release/keel.
+        #[arg(long)]
+        build: bool,
+    },
+    /// Swap the supervised server back to the previous binary.
+    Rollback {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+    },
+    /// What the supervisor is running (binary hash, pid, previous binary).
+    Status {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+    },
     /// Create a plugin crate under plugins/ and compile it into this binary.
     NewPlugin {
         /// Plugin id, e.g. `hello` or `stripe-billing`.
@@ -120,6 +180,16 @@ enum ConfigCommand {
     Expand {
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
+    },
+    /// Print the running server's config, with live changes, as app.yaml.
+    Pull {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        #[arg(long)]
+        url: Option<String>,
+        /// Overwrite app.yaml with it (comments are not kept).
+        #[arg(long)]
+        write: bool,
     },
 }
 
@@ -161,19 +231,55 @@ enum PluginsCommand {
         /// A plugin directory or its plugin.yaml.
         path: PathBuf,
     },
+    /// Start a plugin on the running server (no restart).
+    Enable {
+        /// Plugin id, optionally with a version range.
+        plugin: String,
+        /// Its config as JSON or YAML, e.g. '{ message: hi }'.
+        #[arg(long = "with", value_name = "CONFIG")]
+        with: Option<String>,
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// Stop a plugin on the running server (no restart).
+    Disable {
+        id: String,
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// Change config keys of a running plugin: `keel plugins set ping message=hi`.
+    Set {
+        id: String,
+        /// key=value pairs; values are read as YAML.
+        #[arg(required = true)]
+        pairs: Vec<String>,
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+        #[arg(long)]
+        url: Option<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let out = Out { json: cli.json };
-    let serving = matches!(cli.command, Command::Serve { .. } | Command::Dev { .. });
+    let serving = matches!(
+        cli.command,
+        Command::Serve { .. } | Command::Dev { .. } | Command::Supervise { .. }
+    );
     if serving || std::env::var_os("RUST_LOG").is_some() {
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
         // Servers also log to .keel/keel.log beside app.yaml (read by `keel mcp`).
         let file = match &cli.command {
-            Command::Serve { config } | Command::Dev { config } => log_file(config),
+            Command::Serve { config, .. } | Command::Dev { config } | Command::Supervise { config, .. } => {
+                log_file(config)
+            }
             _ => None,
         };
         tracing_subscriber::registry()
@@ -188,10 +294,11 @@ async fn main() -> ExitCode {
     }
 
     // Commands that read app.yaml also pick up a `.env` beside it.
-    if let Command::Serve { config }
+    if let Command::Serve { config, .. }
     | Command::Dev { config }
     | Command::Check { config }
     | Command::Migrate { config, .. }
+    | Command::Supervise { config, .. }
     | Command::Setup {
         command:
             SetupCommand::Status { config }
@@ -211,7 +318,10 @@ async fn main() -> ExitCode {
 
     let result = match cli.command {
         Command::Init { dir, name } => init(out, &dir, name.as_deref()),
-        Command::Serve { config } => serve(&config).await,
+        Command::Serve {
+            config,
+            drill_unhealthy_after,
+        } => serve(&config, drill_unhealthy_after).await,
         Command::Dev { config } => dev(&config).await,
         Command::Check { config }
         | Command::Config {
@@ -248,6 +358,44 @@ async fn main() -> ExitCode {
             allow_destructive,
         } => ops::migrate(out, &config, apply, &allow_destructive).await,
         Command::Mcp { config } => mcp::run(&config).await,
+        Command::Apply { config, url } => live_ops::apply(out, &config, url.as_deref()).await,
+        Command::Audit { config, url, limit } => live_ops::audit(out, &config, url.as_deref(), limit).await,
+        Command::Config {
+            command: ConfigCommand::Pull { config, url, write },
+        } => live_ops::pull(out, &config, url.as_deref(), write).await,
+        Command::Plugins {
+            command:
+                PluginsCommand::Enable {
+                    plugin,
+                    with,
+                    config,
+                    url,
+                },
+        } => live_ops::enable(out, &config, url.as_deref(), &plugin, with.as_deref()).await,
+        Command::Plugins {
+            command: PluginsCommand::Disable { id, config, url },
+        } => live_ops::disable(out, &config, url.as_deref(), &id).await,
+        Command::Plugins {
+            command:
+                PluginsCommand::Set {
+                    id,
+                    pairs,
+                    config,
+                    url,
+                },
+        } => live_ops::set(out, &config, url.as_deref(), &id, &pairs).await,
+        Command::Supervise {
+            config,
+            binary,
+            watch_secs,
+        } => supervise(&config, binary, watch_secs).await,
+        Command::Update {
+            config,
+            binary,
+            build,
+        } => update(out, &config, binary, build).await,
+        Command::Rollback { config } => supervisor_cmd(out, &config, json!({ "cmd": "rollback" })).await,
+        Command::Status { config } => supervisor_cmd(out, &config, json!({ "cmd": "status" })).await,
         Command::NewPlugin { id } => new_plugin(out, &id),
     };
     match result {
@@ -258,6 +406,48 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(unix)]
+async fn supervise(config: &Path, binary: Option<PathBuf>, watch_secs: u64) -> Result<()> {
+    supervisor::run(config, binary, watch_secs).await
+}
+
+#[cfg(unix)]
+async fn supervisor_cmd(out: Out, config: &Path, cmd: Value) -> Result<()> {
+    supervisor::send(out, config, cmd).await
+}
+
+#[cfg(not(unix))]
+async fn supervise(_: &Path, _: Option<PathBuf>, _: u64) -> Result<()> {
+    bail!("keel supervise needs a Unix system (Linux or macOS)")
+}
+
+#[cfg(not(unix))]
+async fn supervisor_cmd(_: Out, _: &Path, _: Value) -> Result<()> {
+    bail!("the supervisor needs a Unix system (Linux or macOS)")
+}
+
+async fn update(out: Out, config: &Path, binary: Option<PathBuf>, build: bool) -> Result<()> {
+    let binary = match (binary, build) {
+        (Some(b), _) => b,
+        (None, true) => {
+            eprintln!("keel update: cargo build --release --bin keel");
+            let status = tokio::process::Command::new("cargo")
+                .args(["build", "--release", "--bin", "keel"])
+                .status()
+                .await
+                .context("cannot run cargo")?;
+            if !status.success() {
+                bail!("the build failed; nothing changed");
+            }
+            PathBuf::from("target/release/keel")
+        }
+        (None, false) => bail!("pass --binary <path to the new keel> or --build"),
+    };
+    let binary =
+        std::fs::canonicalize(&binary).with_context(|| format!("{}: not found", binary.display()))?;
+    supervisor_cmd(out, config, json!({ "cmd": "swap", "binary": binary })).await
 }
 
 /// `.keel/keel.log` beside app.yaml, appended to; moved to keel.log.1 past 5 MB.
@@ -344,22 +534,79 @@ async fn connect(config: &AppConfig, secrets: Arc<LayeredSecrets>) -> Result<Cap
     Ok(p)
 }
 
-async fn start(path: &Path, registry: &PluginRegistry) -> Result<Host> {
-    let (config, secrets) = load_checked(path, registry).await?;
+async fn start_live(path: &Path, registry: PluginRegistry) -> Result<Live> {
+    let (config, secrets) = load_checked(path, &registry).await?;
     let providers = connect(&config, secrets.clone()).await?;
     let options = HostOptions {
         secrets,
         state_file: Some(SetupState::path_for(path)),
     };
-    Ok(Host::start_with(config, registry, &providers, options).await?)
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("{}: cannot read file", path.display()))?;
+    Ok(Live::start_yaml(&text, registry, providers, options).await?)
 }
 
-async fn serve(path: &Path) -> Result<()> {
-    let host = start(path, &plugins::builtin()).await?;
-    host.serve(async {
+/// Completes on Ctrl-C or SIGTERM (what a supervisor sends to drain).
+async fn stop_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
         let _ = tokio::signal::ctrl_c().await;
-    })
-    .await?;
+    }
+}
+
+/// The listener: inherited from a supervisor (`KEEL_LISTEN_FD`) or bound
+/// from `server:` in app.yaml.
+async fn listener_for(live: &Live) -> Result<tokio::net::TcpListener> {
+    #[cfg(unix)]
+    if let Some(fd) = std::env::var("KEEL_LISTEN_FD")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+    {
+        use std::os::fd::FromRawFd;
+        // SAFETY: the supervisor passes an open listening socket as this fd.
+        let std_listener = unsafe { std::net::TcpListener::from_raw_fd(fd) };
+        std_listener.set_nonblocking(true)?;
+        return Ok(tokio::net::TcpListener::from_std(std_listener)?);
+    }
+    let c = live.config();
+    let addr = format!("{}:{}", c.server.host, c.server.port);
+    tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("cannot listen on {addr}"))
+}
+
+async fn serve(path: &Path, drill_unhealthy_after: Option<u64>) -> Result<()> {
+    let live = start_live(path, plugins::builtin()).await?;
+    if let Some(secs) = drill_unhealthy_after {
+        tracing::warn!(secs, "rollback drill: /health will answer 503");
+        live.drill_unhealthy_after(Duration::from_secs(secs));
+    }
+    let listener = listener_for(&live).await?;
+    // Supervised: a private loopback port for health checks, then a ready line.
+    if let Ok(addr) = std::env::var("KEEL_CONTROL") {
+        let control = tokio::net::TcpListener::bind(&addr).await?;
+        let local = control.local_addr()?;
+        let router = live.control_router();
+        tokio::spawn(async move {
+            let _ = axum::serve(control, router).await;
+        });
+        use std::io::Write;
+        println!(
+            "KEEL_READY {}",
+            json!({ "control": local.to_string(), "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION") })
+        );
+        let _ = std::io::stdout().flush();
+    }
+    live.serve_on(listener, stop_signal()).await?;
     Ok(())
 }
 
@@ -367,18 +614,25 @@ fn modified(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-/// Runs the server and restarts it when app.yaml changes. A broken edit is
-/// reported and the running server keeps going until the file is fixed.
+/// Runs the server and applies app.yaml edits live (no restart). Changes a
+/// live apply cannot make (providers, server) restart the server. A broken
+/// edit is reported and the running server keeps going.
 async fn dev(path: &Path) -> Result<()> {
-    let registry = plugins::builtin();
-    let mut host = start(path, &registry).await?;
     let mut seen = modified(path);
     loop {
+        let live = start_live(path, plugins::builtin()).await?;
+        let listener = listener_for(&live).await?;
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-        let server = tokio::spawn(host.serve(async {
-            let _ = stop_rx.await;
-        }));
-        loop {
+        let server = {
+            let live = live.clone();
+            tokio::spawn(async move {
+                live.serve_on(listener, async {
+                    let _ = stop_rx.await;
+                })
+                .await
+            })
+        };
+        let restart = loop {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     let _ = stop_tx.send(());
@@ -392,30 +646,26 @@ async fn dev(path: &Path) -> Result<()> {
                 continue;
             }
             seen = now;
-            eprintln!("keel dev: {} changed, reloading", path.display());
-            match load_checked(path, &registry).await {
-                Ok(_) => break,
-                Err(e) => eprintln!("keel dev: not reloading, fix app.yaml first:\n{e:#}"),
-            }
-        }
-        let _ = stop_tx.send(());
-        server.await??;
-        host = match start(path, &registry).await {
-            Ok(h) => h,
-            Err(e) => {
-                eprintln!("keel dev: restart failed:\n{e:#}\nkeel dev: waiting for app.yaml to change");
-                loop {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    let now = modified(path);
-                    if now != seen {
-                        seen = now;
-                        if let Ok(h) = start(path, &registry).await {
-                            break h;
-                        }
-                    }
+            let Ok(text) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            match live.apply_yaml(&text, "keel dev").await {
+                Ok(c) if c.mode == "none" => {}
+                Ok(c) => eprintln!(
+                    "keel dev: applied live (version {}; added {:?}, removed {:?}, changed {:?})",
+                    c.version, c.added, c.removed, c.changed
+                ),
+                Err(keel_core::live::LiveError::Refused(m)) => {
+                    eprintln!("keel dev: {m}; restarting");
+                    break true;
                 }
+                Err(e) => eprintln!("keel dev: not applied, fix app.yaml first:\n{e}"),
             }
         };
+        if restart {
+            let _ = stop_tx.send(());
+            server.await??;
+        }
     }
 }
 

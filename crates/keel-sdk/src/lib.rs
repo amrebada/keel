@@ -28,7 +28,7 @@ pub use http::ApiError;
 pub use issues::Issue;
 pub use manifest::{ComposeEntry, Manifest, ManifestError, Route};
 pub use migrations::Migration;
-pub use plugin::{Emitter, Health, InitContext, Plugin, PluginError, Routes};
+pub use plugin::{Current, Emitter, Health, InitContext, Plugin, PluginError, Routes};
 pub use setup::SetupStep;
 
 /// Re-exports plugin crates commonly need, so they only depend on `keel-sdk`.
