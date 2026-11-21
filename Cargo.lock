@@ -1266,6 +1266,7 @@ dependencies = [
  "keel-plugin-rbac",
  "keel-providers",
  "keel-sdk",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",

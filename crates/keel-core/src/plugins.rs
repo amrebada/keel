@@ -130,8 +130,15 @@ pub fn check(
                 issues.push(Issue::new(
                     format!("{at}.use"),
                     format!(
-                        "`{}` needs the `{cap}` capability, which this host does not provide yet",
-                        m.id
+                        "`{}` needs the `{cap}` capability; {}",
+                        m.id,
+                        match cap.as_str() {
+                            "sql" => "add providers.db (e.g. { use: sqlite, url: \"sqlite://app.db\" })",
+                            "cache" => "add providers.cache (e.g. { use: memory })",
+                            "kv" => "add providers.kv (e.g. { use: memory })",
+                            "email" => "add providers.email (e.g. { use: console })",
+                            _ => "this host does not provide it",
+                        }
                     ),
                 ));
             }
