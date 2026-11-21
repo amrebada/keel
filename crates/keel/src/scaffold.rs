@@ -319,6 +319,11 @@ providers:
   db: {{ use: sqlite, url: "sqlite://{app}.db" }}
   cache: {{ use: memory }}
   kv: {{ use: memory }}
+  # Prints emails to the log; swap for a real sender later.
+  email: {{ use: console, from: "{app} <noreply@localhost>" }}
+
+# Secrets come from env vars and .env by default. To read them from Vault:
+# secrets: {{ use: vault, url: "https://vault:8200", mount: secret, path: {app} }}
 
 # See what's available with `keel plugins list`, add with `keel add <id>`.
 plugins:
@@ -327,7 +332,7 @@ plugins:
     )
 }
 
-const TEMPLATE_ENV: &str = "# Copy to .env: keel dev, serve and check load it (real env vars win).\n# Secrets referenced as ${secret:NAME} in app.yaml are read from env vars.\n# DATABASE_URL=postgres://user:pass@localhost:5432/app\n# REDIS_URL=redis://localhost:6379\n";
+const TEMPLATE_ENV: &str = "# Copy to .env: keel dev, serve and check load it (real env vars win).\n# Secrets referenced as ${secret:NAME} in app.yaml are read from env vars.\n# DATABASE_URL=postgres://user:pass@localhost:5432/app\n# REDIS_URL=redis://localhost:6379\n# AUTH_JWT_SECRET=  (auth-core; at least 32 random bytes)\n";
 
 #[cfg(test)]
 mod init_tests {
