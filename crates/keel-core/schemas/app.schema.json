@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Keel app.yaml",
+  "type": "object",
+  "required": ["app"],
+  "additionalProperties": false,
+  "properties": {
+    "app": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["use"],
+        "properties": { "use": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["use"],
+        "additionalProperties": false,
+        "properties": {
+          "use": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*(@[^\\s]+)?$" },
+          "config": { "type": "object" }
+        }
+      }
+    },
+    "routes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "guard": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    }
+  }
+}

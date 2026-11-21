@@ -1,0 +1,23 @@
+[package]
+name = "keel-core"
+description = "Keel host core: config loading, secrets, hook bus and HTTP server"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum.workspace = true
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util"] }
+tower.workspace = true
+http-body-util.workspace = true
