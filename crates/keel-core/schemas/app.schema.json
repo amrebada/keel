@@ -2,35 +2,190 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Keel app.yaml",
   "type": "object",
-  "required": ["app"],
+  "required": [
+    "app"
+  ],
   "additionalProperties": false,
   "properties": {
-    "app": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "app": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
     "server": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "host": { "type": "string", "minLength": 1 },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
     "providers": {
       "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "required": ["use"],
-        "properties": { "use": { "type": "string", "minLength": 1 } }
+      "additionalProperties": false,
+      "properties": {
+        "db": {
+          "type": "object",
+          "required": [
+            "use"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "use": {
+              "enum": [
+                "postgres",
+                "mysql",
+                "sqlite"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "prefix": {
+              "type": "string"
+            },
+            "max_connections": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "use": {
+                    "enum": [
+                      "postgres",
+                      "mysql",
+                      "sqlite"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          ]
+        },
+        "cache": {
+          "type": "object",
+          "required": [
+            "use"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "use": {
+              "enum": [
+                "redis",
+                "memory"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "prefix": {
+              "type": "string"
+            },
+            "max_connections": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "use": {
+                    "enum": [
+                      "redis"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          ]
+        },
+        "kv": {
+          "type": "object",
+          "required": [
+            "use"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "use": {
+              "enum": [
+                "redis",
+                "memory"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "prefix": {
+              "type": "string"
+            },
+            "max_connections": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "use": {
+                    "enum": [
+                      "redis"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          ]
+        }
       }
     },
     "plugins": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["use"],
+        "required": [
+          "use"
+        ],
         "additionalProperties": false,
         "properties": {
-          "use": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*(@[^\\s]+)?$" },
-          "config": { "type": "object" }
+          "use": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*(@[^\\s]+)?$"
+          },
+          "config": {
+            "type": "object"
+          }
         }
       }
     },
@@ -40,7 +195,13 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "guard": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          "guard": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     }

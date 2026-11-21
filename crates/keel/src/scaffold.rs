@@ -250,3 +250,105 @@ mod tests {
         assert!(new_plugin(root, "hello-world").is_err(), "refuses to overwrite");
     }
 }
+
+/// `keel init`: a new app directory with a dev setup (SQLite + memory).
+pub fn init_project(dir: &Path, name: Option<&str>) -> Result<Vec<PathBuf>> {
+    let app_yaml = dir.join("app.yaml");
+    if app_yaml.exists() {
+        bail!("{} already exists", app_yaml.display());
+    }
+    fs::create_dir_all(dir)?;
+    let raw = match name {
+        Some(n) => n.to_string(),
+        None => dir
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.file_name().map(|f| f.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "my-app".into()),
+    };
+    let app = app_name(&raw);
+    let files = [
+        ("app.yaml", template_app(&app)),
+        (".env.example", TEMPLATE_ENV.to_string()),
+        (".gitignore", "*.db\n*.db-shm\n*.db-wal\n.env\n".to_string()),
+    ];
+    let mut written = Vec::new();
+    for (name, body) in files {
+        let path = dir.join(name);
+        if path.exists() && name != "app.yaml" {
+            continue;
+        }
+        fs::write(&path, body)?;
+        written.push(path);
+    }
+    Ok(written)
+}
+
+/// `My App_2` -> `my-app-2`
+fn app_name(raw: &str) -> String {
+    let mut s: String = raw
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    while s.contains("--") {
+        s = s.replace("--", "-");
+    }
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() {
+        "my-app".into()
+    } else {
+        s
+    }
+}
+
+fn template_app(app: &str) -> String {
+    format!(
+        r#"# Keel app. `keel dev` runs it and reloads when this file changes.
+app: {app}
+server:
+  host: 127.0.0.1
+  port: 8080
+
+# Development setup: a local SQLite file and in-memory cache and key-value.
+# For production, switch to Postgres and Redis with a YAML change:
+#   db:    {{ use: postgres, url: "${{secret:DATABASE_URL}}" }}
+#   cache: {{ use: redis, url: "${{secret:REDIS_URL}}" }}
+#   kv:    {{ use: redis, url: "${{secret:REDIS_URL}}", prefix: "kv:" }}
+providers:
+  db: {{ use: sqlite, url: "sqlite://{app}.db" }}
+  cache: {{ use: memory }}
+  kv: {{ use: memory }}
+
+# See what's available with `keel plugins list`, add with `keel add <id>`.
+plugins:
+  - use: ping@^0.1
+"#
+    )
+}
+
+const TEMPLATE_ENV: &str = "# Copy to .env: keel dev, serve and check load it (real env vars win).\n# Secrets referenced as ${secret:NAME} in app.yaml are read from env vars.\n# DATABASE_URL=postgres://user:pass@localhost:5432/app\n# REDIS_URL=redis://localhost:6379\n";
+
+#[cfg(test)]
+mod init_tests {
+    use super::*;
+
+    #[test]
+    fn app_names() {
+        assert_eq!(app_name("My App_2"), "my-app-2");
+        assert_eq!(app_name("--"), "my-app");
+    }
+
+    #[test]
+    fn init_writes_a_valid_app_yaml_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("Team Tasks");
+        let files = init_project(&dir, None).unwrap();
+        assert_eq!(files.len(), 3);
+        let text = fs::read_to_string(dir.join("app.yaml")).unwrap();
+        let c = keel_core::AppConfig::load_str(&text, "app.yaml", &keel_core::MapSecrets::default()).unwrap();
+        assert_eq!(c.app, "team-tasks");
+        assert_eq!(c.providers["db"].kind, "sqlite");
+        assert!(init_project(&dir, None).is_err(), "refuses to overwrite app.yaml");
+    }
+}
