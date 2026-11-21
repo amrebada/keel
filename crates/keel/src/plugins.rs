@@ -14,5 +14,7 @@ pub fn builtin() -> PluginRegistry {
         .register(keel_plugin_auth_oauth::AuthOauth::new())
         .register(keel_plugin_ping::Ping::new())
         .register(keel_plugin_rbac::Rbac::new())
+        .register(keel_plugin_resource::Resource::new())
+        .register(keel_plugin_saas_auth::SaasAuth::new())
     // keel:plugins:end
 }

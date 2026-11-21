@@ -90,6 +90,14 @@ pub trait Plugin: Send + Sync + 'static {
         Vec::new()
     }
 
+    /// Migrations that depend on the plugin's `config:` block (with defaults
+    /// not filled in). Defaults to [`Plugin::migrations`]. Each id must stay
+    /// stable for the same config, so a config change adds migrations
+    /// instead of editing applied ones.
+    fn migrations_for(&self, dialect: &str, _config: &Value) -> Vec<crate::Migration> {
+        self.migrations(dialect)
+    }
+
     /// Runs a `plugin-check` setup step. `Err` holds what the user should fix.
     async fn check_setup(&self, _step_id: &str) -> Result<(), String> {
         Ok(())

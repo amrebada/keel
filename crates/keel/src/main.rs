@@ -115,7 +115,8 @@ enum ConfigCommand {
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
     },
-    /// Print app.yaml with every default filled in. Secrets stay as references.
+    /// Print app.yaml with bundles (composers such as saas-auth) expanded into
+    /// their plugins and every default filled in. Secrets stay as references.
     Expand {
         #[arg(short, long, default_value = "app.yaml")]
         config: PathBuf,
@@ -332,6 +333,7 @@ async fn secrets_for(path: &Path) -> Result<Arc<LayeredSecrets>> {
 async fn load_checked(path: &Path, registry: &PluginRegistry) -> Result<(AppConfig, Arc<LayeredSecrets>)> {
     let secrets = secrets_for(path).await?;
     let config = AppConfig::load_file(path, secrets.as_ref())?;
+    let config = keel_core::compose::expand(&config, registry)?.config;
     keel_core::plugins::check(&config, registry, &static_providers(&config))?;
     Ok((config, secrets))
 }
@@ -450,15 +452,22 @@ impl SecretSource for KeepRefs {
 fn expand(out: Out, path: &Path) -> Result<()> {
     let config = AppConfig::load_file(path, &KeepRefs)?;
     let registry = plugins::builtin();
+    let expanded = keel_core::compose::expand(&config, &registry)?;
+    let config = expanded.config;
     let plugins: Vec<Value> = config
         .plugins
         .iter()
-        .map(|p| {
+        .zip(&expanded.origins)
+        .map(|(p, origin)| {
             let cfg = match registry.get(p.name()) {
                 Some(pl) => describe::with_defaults(pl.manifest(), &p.config),
                 None => p.config.clone(),
             };
-            json!({ "use": p.spec, "config": cfg })
+            let mut e = json!({ "use": p.spec, "config": cfg });
+            if let Some(o) = origin {
+                e["from"] = json!(o);
+            }
+            e
         })
         .collect();
     let expanded = json!({
@@ -503,6 +512,7 @@ fn add(out: Out, spec: &str, path: &Path) -> Result<()> {
     let config = describe::minimal_config(m);
     let updated = yaml_edit::add_plugin(&text, &spec, &config)?;
     let parsed = AppConfig::load_str(&updated, &path.display().to_string(), &KeepRefs)?;
+    let parsed = keel_core::compose::expand(&parsed, &registry)?.config;
     keel_core::plugins::check(&parsed, &registry, &static_providers(&parsed))?;
     std::fs::write(path, &updated)?;
     out.success(

@@ -24,6 +24,20 @@ pub fn ai_summary(m: &Manifest) -> String {
             s.push_str(&format!("  {k}\n"));
         }
     }
+    if m.is_composer() {
+        let parts: Vec<String> = m
+            .compose
+            .iter()
+            .map(|c| match &c.when {
+                Some(w) => format!("{} (when {w})", c.spec),
+                None => c.spec.clone(),
+            })
+            .collect();
+        s.push_str(&format!(
+            "bundle: expands into {}; see the result with keel config expand; tune an included plugin with config.with.<plugin id>\n",
+            parts.join(", ")
+        ));
+    }
     let routes: Vec<String> = m.routes.iter().map(|r| r.to_string()).collect();
     s.push_str(&format!("routes: {}\n", join_or_none(&routes)));
     s.push_str(&format!(
@@ -140,6 +154,7 @@ pub fn manifest_json(m: &Manifest) -> Value {
         "config_schema": m.config_schema,
         "runtime_config": m.runtime_config,
         "setup": m.setup,
+        "compose": m.compose.iter().map(|c| json!({ "use": c.spec, "when": c.when, "config": c.config })).collect::<Vec<_>>(),
     })
 }
 

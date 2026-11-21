@@ -6,7 +6,7 @@ Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An 
 
 ## Status
 
-Phase 5 of 8 (roles, business plugins, MCP) is done:
+Phase 6 of 8 (CRUD resources and bundles) is done:
 
 - **Host core (phase 1):** loads and validates `app.yaml`, resolves `${secret:NAME}` from environment variables, runs an event hook bus, serves `/health`.
 - **Plugin contract (phase 2):** plugins are Rust crates compiled into the binary. Each has a `plugin.yaml` manifest, a `config.schema.json`, and a type implementing the `Plugin` trait from `keel-sdk`. The host starts only the plugins `app.yaml` lists, after checking versions, dependencies, capabilities, config and route ownership.
@@ -19,6 +19,8 @@ Phase 5 of 8 (roles, business plugins, MCP) is done:
 - **Roles and guards (phase 5):** the `rbac` plugin defines roles in YAML (with inheritance), per-user permission grants and roles scoped to a tenant (`X-Tenant-Id`). `routes:` in `app.yaml` puts guards (`authenticated`, `role:x`, `permission:x`, `owner:param`, `rate-limit:n/period`, `any(...)`, `all(...)`, plugin guards like `plan:pro`) and JSON Schema validation in front of any route.
 - **Business plugins (phase 5):** `billing-stripe` (plans in YAML, Checkout, customer portal, signed webhooks, subscription state per tenant, `plan:x` guard). Email goes through `console`, `smtp`, `resend` or `ses`, with templates in `app.yaml`.
 - **MCP (phase 5):** `keel mcp` lets an AI client search plugins, read, validate and apply `app.yaml`, follow setup steps and read logs without a shell.
+- **CRUD resources (phase 6):** the `resource` plugin turns models in `app.yaml` into tables, migrations and REST endpoints with validation, filters, sorting, paging, per-owner or per-tenant rows and optional caching. Guard them with `routes:` like any other route.
+- **Bundles (phase 6):** a composer plugin has no code; its manifest expands into other plugins. `saas-auth` brings auth-core, auth-oauth, auth-mfa and rbac with one small config. `keel config expand` shows the result.
 
 ## Try it
 
@@ -94,6 +96,52 @@ routes:
 ```
 
 Every matching rule applies. Failures answer `401`, `403`, `429`, `402 plan_required` or `422 validation_failed` with a list of issues. Send `X-Tenant-Id: team-1` to use roles granted in that team. `keel config validate` reports a guard whose plugin is missing.
+
+## CRUD resources from YAML
+
+```yaml
+plugins:
+  - use: resource
+    config:
+      resources:
+        projects:                      # table resource_projects, routes /api/projects
+          fields:
+            name: { type: string, required: true, max_length: 80 }
+            slug: { type: string, required: true, unique: true, pattern: "^[a-z0-9-]+$" }
+            status: { type: string, enum: [active, archived], default: active }
+            budget: { type: number, min: 0 }
+            due: { type: date }
+        notes:
+          scope: owner                 # rows belong to the signed-in user; notes.manage sees all
+          cache_ttl: 60
+          fields: { body: { type: text, required: true } }
+routes:
+  "GET /api/projects": { guard: ["permission:projects.read"] }
+  "POST /api/projects": { guard: ["permission:projects.write"] }
+  "PATCH /api/projects/*": { guard: ["permission:projects.write"] }
+  "DELETE /api/projects/*": { guard: ["permission:projects.delete"] }
+```
+
+Each resource answers `GET /api/<name>` (list), `POST` (create, `201`), `GET`, `PATCH` and `DELETE /api/<name>/{id}`. `GET /api` describes every resource and its create schema.
+
+- Field types: `string` (up to 255), `text`, `integer`, `number`, `boolean`, `date`, `datetime`, `json`. Rules: `required`, `default`, `enum`, `min`, `max`, `min_length`, `max_length`, `pattern`, `unique` (`409 conflict` on a duplicate).
+- List queries: `?status=active`, `budget.gte=100`, `.gt`, `.lt`, `.lte`, `.ne`, `name.contains=apo`, `slug.in=a,b`, `due.null=true`, `sort=-created_at,name`, `limit`, `offset`. The answer is `{ items, total, limit, offset }`.
+- Scopes: `owner` (needs auth-core) and `tenant` (rows per `X-Tenant-Id`; unique values are per tenant).
+- Each table and field is its own migration, so adding a field adds a column. Changing a field's rules needs no migration; to change its type, add a field with a new name.
+
+## Bundles: saas-auth
+
+```yaml
+plugins:
+  - use: saas-auth@^1
+    config:
+      social: [google, apple]          # leave empty to skip auth-oauth
+      roles: [admin, member]           # admin gets every permission
+      admins: [you@example.com]
+      with: { auth-core: { password_min_length: 12 } }   # any setting of an included plugin
+```
+
+`keel config expand` prints the four plugins this becomes. Write your own bundle with a `compose:` block in `plugin.yaml` and `keel_sdk::composer!()` as the whole crate.
 
 ## Billing with Stripe
 
@@ -182,7 +230,7 @@ error: app.yaml: 3 problem(s) found
 | `crates/keel-core/schemas/app.schema.json` | JSON Schema for `app.yaml` |
 | `crates/keel-providers` | SQL (sqlx), Redis, in-memory, crypto, HTTP, email (console, SMTP, Resend, SES) and Vault providers |
 | `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`, `setup`, `migrate`, `mcp`) |
-| `plugins/` | Compiled-in plugins |
+| `plugins/` | Compiled-in plugins (`saas-auth` is a bundle with no code) |
 | `examples/app.yaml` | Sample config |
 
 ## Development

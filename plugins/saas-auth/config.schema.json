@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "app_url": { "type": "string", "default": "http://localhost:8080", "description": "Public URL of the API; used in email links and OAuth callbacks." },
+    "app_name": { "type": "string", "minLength": 1, "default": "Keel", "description": "Shown in authenticator apps." },
+    "social": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [],
+      "items": { "enum": ["google", "apple", "facebook", "linkedin", "github", "microsoft", "x"] },
+      "description": "Social sign-in providers; each needs its client id and secret (keel setup lists them). Empty leaves auth-oauth out."
+    },
+    "success_redirect": { "type": "string", "description": "Frontend URL to land on after social sign-in, with tokens in the fragment." },
+    "mfa": { "type": "boolean", "default": true, "description": "Include auth-mfa (TOTP two-factor and recovery codes)." },
+    "roles": {
+      "default": ["admin", "member"],
+      "description": "Role names (admin_role gets every permission, others none until granted), or a full rbac roles map with permissions and inherits.",
+      "oneOf": [
+        { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" } },
+        { "type": "object", "minProperties": 1 }
+      ]
+    },
+    "admin_role": { "type": "string", "default": "admin" },
+    "default_role": { "type": "string", "default": "member", "description": "Role every new user gets." },
+    "admins": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Emails that get admin_role." },
+    "signup": { "type": "boolean", "default": true },
+    "require_verified_email": { "type": "boolean", "default": true }
+  }
+}

@@ -1,0 +1,20 @@
+id: resource
+version: 0.1.0
+summary: REST CRUD from YAML models - tables and migrations, list with filters, sort and paging, get, create, update, delete, per-owner or per-tenant rows, and optional caching.
+tags: [crud, rest, api, models, database, tables, resources]
+requires:
+  host: "^0.1"
+  capabilities: [sql, cache, log]
+provides:
+  routes:
+    - GET /api
+    - GET /api/{resource}
+    - POST /api/{resource}
+    - GET /api/{resource}/{id}
+    - PATCH /api/{resource}/{id}
+    - DELETE /api/{resource}/{id}
+  events: [resource.created, resource.updated, resource.deleted]
+config: config.schema.json
+runtime_config: []
+migrations: built-in
+degrade_level: error

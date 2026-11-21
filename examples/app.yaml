@@ -14,14 +14,28 @@ plugins:
   - use: ping@^0.1
     config:
       message: pong from team-tasks
-  - use: auth-core
-  - use: rbac
+  - use: saas-auth@^1
     config:
+      mfa: false
       roles:
         admin: { permissions: ["*"] }
         owner: { permissions: ["tasks.*", "rbac.manage"], inherits: [member] }
         member: { permissions: ["tasks.read"] }
+  - use: resource
+    config:
+      resources:
+        tasks:
+          scope: tenant
+          fields:
+            title: { type: string, required: true, max_length: 120 }
+            done: { type: boolean, default: false }
+            due: { type: date }
 
 routes:
   /admin/**: { guard: [authenticated, "role:admin"] }
   /ping: { guard: ["rate-limit:60/min"] }
+  "GET /api/tasks": { guard: ["permission:tasks.read"] }
+  "GET /api/tasks/*": { guard: ["permission:tasks.read"] }
+  "POST /api/tasks": { guard: ["permission:tasks.write"] }
+  "PATCH /api/tasks/*": { guard: ["permission:tasks.write"] }
+  "DELETE /api/tasks/*": { guard: ["permission:tasks.write"] }

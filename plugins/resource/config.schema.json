@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resources"],
+  "properties": {
+    "resources": {
+      "type": "object",
+      "description": "Resource name (plural, e.g. projects) to its model. Served at /api/<name>; protect with routes: rules such as \"POST /api/projects\": { guard: [\"permission:projects.write\"] }.",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fields"],
+        "properties": {
+          "fields": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type"],
+              "properties": {
+                "type": { "enum": ["string", "text", "integer", "number", "boolean", "date", "datetime", "json"], "description": "string is up to 255 characters; text is longer; date is YYYY-MM-DD; datetime is RFC 3339." },
+                "required": { "type": "boolean", "default": false },
+                "default": { "description": "Used on create when the field is left out" },
+                "enum": { "type": "array", "minItems": 1 },
+                "min": { "type": "number" },
+                "max": { "type": "number" },
+                "min_length": { "type": "integer", "minimum": 0 },
+                "max_length": { "type": "integer", "minimum": 1, "maximum": 255, "description": "string fields; at most 255" },
+                "pattern": { "type": "string", "description": "Regular expression a string must match" },
+                "unique": { "type": "boolean", "default": false },
+                "filter": { "type": "boolean", "description": "Allow ?field= filters (default true except text and json)" },
+                "sort": { "type": "boolean", "description": "Allow ?sort=field (default true except text and json)" }
+              }
+            }
+          },
+          "scope": {
+            "enum": ["none", "owner", "tenant"],
+            "default": "none",
+            "description": "owner: rows belong to the signed-in user who created them (needs auth-core); tenant: rows belong to the X-Tenant-Id team."
+          },
+          "manage_permission": { "type": "string", "description": "With scope owner, holders of this permission (rbac) see and change every row. Default <name>.manage." },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 20 },
+          "max_page_size": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 },
+          "cache_ttl": { "type": "integer", "minimum": 0, "default": 0, "description": "Seconds to cache list and get results; writes clear them. 0 turns caching off." }
+        }
+      }
+    }
+  }
+}

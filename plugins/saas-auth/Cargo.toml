@@ -1,0 +1,20 @@
+[package]
+name = "keel-plugin-saas-auth"
+description = "Keel saas-auth: a bundle of auth-core, auth-oauth, auth-mfa and rbac with one small config"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+keel-sdk.workspace = true
+
+[dev-dependencies]
+keel-core.workspace = true
+keel-providers.workspace = true
+tokio.workspace = true
+keel-plugin-auth-core = { path = "../auth-core" }
+keel-plugin-auth-oauth = { path = "../auth-oauth" }
+keel-plugin-auth-mfa = { path = "../auth-mfa" }
+keel-plugin-rbac = { path = "../rbac" }
+serde_json.workspace = true

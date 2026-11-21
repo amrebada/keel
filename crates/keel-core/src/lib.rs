@@ -4,6 +4,7 @@
 //! starts the compiled-in plugins it lists, runs the event hook bus, and
 //! serves HTTP with a `/health` endpoint.
 
+pub mod compose;
 pub mod config;
 pub mod migrate;
 pub mod plugins;
