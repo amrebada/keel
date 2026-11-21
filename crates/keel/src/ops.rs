@@ -198,9 +198,37 @@ pub async fn migrate(out: Out, path: &Path, apply: bool, allow: &[String]) -> Re
     } else if !pending.is_empty() {
         text.push_str("\ndry run: nothing changed. Run with --apply to run the additive ones");
     }
-    out.success(
-        text,
-        json!({ "plan": plan, "applied": applied, "dry_run": !apply && allow.is_empty() }),
-    );
+    let ran = apply || !allow.is_empty();
+    let blocked: Vec<String> = plan
+        .migrations
+        .iter()
+        .filter(|m| m.state == State::Blocked)
+        .map(|m| m.id.clone())
+        .collect();
+    let data = json!({ "plan": plan, "applied": applied, "dry_run": !ran, "blocked": blocked });
+    if ran && !blocked.is_empty() {
+        text.push_str(&format!(
+            "
+error: {} migration(s) still blocked: {}",
+            blocked.len(),
+            blocked.join(", ")
+        ));
+        out.report(false, text, data);
+        return Err(Reported.into());
+    }
+    out.success(text, data);
     Ok(())
 }
+
+/// The command already printed its result and failed; exit non-zero without
+/// printing again.
+#[derive(Debug)]
+pub struct Reported;
+
+impl std::fmt::Display for Reported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("already reported")
+    }
+}
+
+impl std::error::Error for Reported {}

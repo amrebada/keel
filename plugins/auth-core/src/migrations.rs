@@ -4,9 +4,10 @@
 use keel_sdk::Migration;
 
 pub fn all() -> Vec<Migration> {
-    vec![Migration::new(
-        "001_init",
-        "CREATE TABLE {ns}users (
+    vec![
+        Migration::new(
+            "001_init",
+            "CREATE TABLE {ns}users (
             id VARCHAR(36) NOT NULL PRIMARY KEY,
             email VARCHAR(255),
             email_verified BIGINT NOT NULL DEFAULT 0,
@@ -34,5 +35,17 @@ pub fn all() -> Vec<Migration> {
             used_at BIGINT
         );
         CREATE INDEX {ns}tokens_user ON {ns}tokens (user_id)",
-    )]
+        ),
+        // Refresh tokens that were rotated away. Presenting one again means it
+        // leaked, so the whole session is revoked.
+        Migration::new(
+            "002_refresh_reuse",
+            "CREATE TABLE {ns}used_refresh (
+            hash VARCHAR(64) NOT NULL PRIMARY KEY,
+            session_id VARCHAR(36) NOT NULL,
+            used_at BIGINT NOT NULL
+        );
+        CREATE INDEX {ns}used_refresh_at ON {ns}used_refresh (used_at)",
+        ),
+    ]
 }

@@ -232,6 +232,7 @@ async fn main() -> ExitCode {
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
+        Err(e) if e.is::<ops::Reported>() => ExitCode::FAILURE,
         Err(e) => {
             out.failure(&e);
             ExitCode::FAILURE

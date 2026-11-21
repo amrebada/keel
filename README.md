@@ -73,7 +73,7 @@ Manual steps (such as "add the redirect URL in the Google console") are marked w
 
 ## Migrations
 
-`keel migrate` prints the plan without changing anything: each pending migration, whether it is additive or destructive, and how many rows it would touch. `keel migrate --apply` runs it. A destructive migration only runs with `--allow-destructive <plugin>/<id>`, and the tables it touches are copied to `keel_backup_<time>_<table>` first. `keel serve` and `keel dev` run additive migrations at start and refuse to start on a blocked one.
+`keel migrate` prints the plan without changing anything: each pending migration, whether it is additive or destructive, and how many rows it would touch. `keel migrate --apply` runs it. A destructive migration only runs with `--allow-destructive <plugin>/<id>`, and the tables it touches are copied to `keel_backup_<time>_<table>` first. `--apply` exits non-zero while a destructive migration is still blocked. `keel serve` and `keel dev` run additive migrations at start and refuse to start on a blocked one.
 
 ## Secrets from Vault
 
