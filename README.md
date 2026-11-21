@@ -6,20 +6,40 @@ Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An 
 
 ## Status
 
-Phase 2 of 8 (plugin contract) is done:
+Phase 3 of 8 (data providers and CLI) is done:
 
 - **Host core (phase 1):** loads and validates `app.yaml`, resolves `${secret:NAME}` from environment variables, runs an event hook bus, serves `/health`.
 - **Plugin contract (phase 2):** plugins are Rust crates compiled into the binary. Each has a `plugin.yaml` manifest, a `config.schema.json`, and a type implementing the `Plugin` trait from `keel-sdk`. The host starts only the plugins `app.yaml` lists, after checking versions, dependencies, capabilities, config and route ownership.
+- **Data providers (phase 3):** `providers:` in `app.yaml` picks SQL (sqlite, postgres, mysql), cache and key-value (memory or redis). Switching from SQLite to Postgres and Redis is a YAML change. Each plugin gets its own key prefix (`<id>:`) and table prefix (`<id>_`). `/health` reports every provider.
+- **CLI (phase 3):** `init`, `dev` (reloads on `app.yaml` changes and keeps running on a broken edit), `add`, `plugins list/describe --ai`, `config validate/expand`, and `--json` on every command for AI tools.
 
 ## Try it
 
 ```sh
-cargo build
-export DATABASE_URL=postgres://localhost/app   # referenced by the example
-./target/debug/keel check -c examples/app.yaml # validate only
-./target/debug/keel serve -c examples/app.yaml # start on 127.0.0.1:8080
+cargo install --path crates/keel   # or use ./target/debug/keel after cargo build
+keel init shop && cd shop          # app.yaml on SQLite + in-memory cache/kv
+keel dev                           # serves 127.0.0.1:8080, reloads on edits
 curl localhost:8080/health
 curl localhost:8080/ping
+```
+
+Move to Postgres and Redis by editing `providers:` (the commented lines in the generated `app.yaml`):
+
+```yaml
+providers:
+  db:    { use: postgres, url: "${secret:DATABASE_URL}" }
+  cache: { use: redis, url: "${secret:REDIS_URL}" }
+  kv:    { use: redis, url: "${secret:REDIS_URL}", prefix: "kv:" }
+```
+
+Commands an AI uses to stay cheap on tokens:
+
+```sh
+keel plugins list --json        # one line per plugin
+keel plugins describe ping --ai # config, routes, events, setup steps in a few lines
+keel add ping                   # adds the entry with its minimal config, keeps comments
+keel config validate            # every problem with its path
+keel config expand              # app.yaml with defaults filled in, secrets left as refs
 ```
 
 ## Write a plugin
@@ -58,7 +78,8 @@ error: app.yaml: 3 problem(s) found
 | `crates/keel-sdk/schemas/plugin.schema.json` | JSON Schema for `plugin.yaml` |
 | `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host |
 | `crates/keel-core/schemas/app.schema.json` | JSON Schema for `app.yaml` |
-| `crates/keel` | The `keel` binary (`serve`, `check`, `plugins`, `new-plugin`) |
+| `crates/keel-providers` | SQL (sqlx), Redis and in-memory providers |
+| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`) |
 | `plugins/` | Compiled-in plugins |
 | `examples/app.yaml` | Sample config |
 
@@ -68,4 +89,6 @@ error: app.yaml: 3 problem(s) found
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+# Postgres, MySQL and Redis tests run when these are set (CI sets them):
+# KEEL_TEST_POSTGRES_URL, KEEL_TEST_MYSQL_URL, KEEL_TEST_REDIS_URL
 ```

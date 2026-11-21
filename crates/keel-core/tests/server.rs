@@ -34,7 +34,11 @@ async fn health_reports_app_and_configured_parts() {
     assert_eq!(body["status"], "ok");
     assert_eq!(body["app"], "team-tasks");
     assert_eq!(body["plugins"], serde_json::json!([]));
-    assert_eq!(body["providers_configured"][0], "cache");
+    assert_eq!(
+        body["providers"],
+        serde_json::json!([]),
+        "Host::new connects no providers"
+    );
 }
 
 #[tokio::test]

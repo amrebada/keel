@@ -11,6 +11,31 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: keel
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: keel
+          MYSQL_DATABASE: keel
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -pkeel" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      KEEL_TEST_POSTGRES_URL: postgres://postgres:keel@127.0.0.1:5432/postgres
+      KEEL_TEST_MYSQL_URL: mysql://root:keel@127.0.0.1:3306/keel
+      KEEL_TEST_REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

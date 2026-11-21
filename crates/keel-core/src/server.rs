@@ -8,7 +8,7 @@ use std::time::Instant;
 use axum::extract::State;
 use axum::routing::{get, MethodRouter};
 use axum::{Json, Router};
-use keel_sdk::capabilities::CapabilityProviders;
+use keel_sdk::capabilities::{Capability, CapabilityProviders};
 use keel_sdk::{Event, HookBus, Plugin};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -19,6 +19,7 @@ use crate::plugins::{self, PluginLoadError, PluginRegistry};
 #[derive(Clone)]
 struct HostState {
     config: Arc<AppConfig>,
+    providers: CapabilityProviders,
     plugins: Arc<Vec<Arc<dyn Plugin>>>,
     started: Instant,
 }
@@ -26,6 +27,7 @@ struct HostState {
 /// A configured Keel server.
 pub struct Host {
     config: Arc<AppConfig>,
+    providers: CapabilityProviders,
     hooks: Arc<HookBus>,
     plugins: Vec<Arc<dyn Plugin>>,
     extra: Router,
@@ -36,6 +38,7 @@ impl Host {
     pub fn new(config: AppConfig) -> Self {
         Self {
             config: Arc::new(config),
+            providers: CapabilityProviders::default(),
             hooks: Arc::new(HookBus::new()),
             plugins: Vec::new(),
             extra: Router::new(),
@@ -49,6 +52,7 @@ impl Host {
         providers: &CapabilityProviders,
     ) -> Result<Self, PluginLoadError> {
         let mut host = Self::new(config);
+        host.providers = providers.clone();
         let loaded = plugins::load(&host.config, registry, providers, &host.hooks).await?;
         for l in loaded {
             host.extra = host.extra.merge(l.router);
@@ -80,6 +84,7 @@ impl Host {
     pub fn router(&self) -> Router {
         let state = HostState {
             config: self.config.clone(),
+            providers: self.providers.clone(),
             plugins: Arc::new(self.plugins.clone()),
             started: Instant::now(),
         };
@@ -137,12 +142,40 @@ async fn health(State(s): State<HostState>) -> Json<Value> {
         }
         plugins.push(entry);
     }
+    let mut providers = Vec::new();
+    for info in &s.providers.info {
+        let ping = match info.capability {
+            Capability::Sql => match &s.providers.sql {
+                Some(p) => p.ping().await,
+                None => Ok(()),
+            },
+            Capability::Cache => match &s.providers.cache {
+                Some(p) => p.ping().await,
+                None => Ok(()),
+            },
+            Capability::Kv => match &s.providers.kv {
+                Some(p) => p.ping().await,
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        };
+        let mut entry = serde_json::to_value(info).unwrap_or_default();
+        match ping {
+            Ok(()) => entry["status"] = "ok".into(),
+            Err(e) => {
+                all_ok = false;
+                entry["status"] = "down".into();
+                entry["reason"] = e.to_string().into();
+            }
+        }
+        providers.push(entry);
+    }
     Json(json!({
         "status": if all_ok { "ok" } else { "degraded" },
         "app": s.config.app,
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_secs": s.started.elapsed().as_secs(),
         "plugins": plugins,
-        "providers_configured": s.config.providers.keys().collect::<Vec<_>>(),
+        "providers": providers,
     }))
 }

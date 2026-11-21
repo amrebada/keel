@@ -15,7 +15,8 @@ use serde_json::{Map, Value};
 use crate::async_trait;
 
 /// Names used in `requires.capabilities`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Capability {
     Sql,
     Kv,
@@ -78,6 +79,12 @@ pub type CapResult<T> = Result<T, CapabilityError>;
 /// SQL database. Rows are JSON objects keyed by column name.
 #[async_trait]
 pub trait Sql: Send + Sync {
+    /// `postgres`, `mysql` or `sqlite`. Write `?` placeholders; the provider
+    /// rewrites them for the database in use.
+    fn dialect(&self) -> &'static str;
+    async fn ping(&self) -> CapResult<()> {
+        self.query("SELECT 1", &[]).await.map(|_| ())
+    }
     async fn execute(&self, sql: &str, params: &[Value]) -> CapResult<u64>;
     async fn query(&self, sql: &str, params: &[Value]) -> CapResult<Vec<Map<String, Value>>>;
 }
@@ -85,6 +92,9 @@ pub trait Sql: Send + Sync {
 /// Durable key-value store.
 #[async_trait]
 pub trait Kv: Send + Sync {
+    async fn ping(&self) -> CapResult<()> {
+        self.get("__keel_ping").await.map(|_| ())
+    }
     async fn get(&self, key: &str) -> CapResult<Option<Vec<u8>>>;
     async fn set(&self, key: &str, value: Vec<u8>) -> CapResult<()>;
     async fn delete(&self, key: &str) -> CapResult<bool>;
@@ -93,6 +103,9 @@ pub trait Kv: Send + Sync {
 /// Cache with time-to-live.
 #[async_trait]
 pub trait Cache: Send + Sync {
+    async fn ping(&self) -> CapResult<()> {
+        self.get("__keel_ping").await.map(|_| ())
+    }
     async fn get(&self, key: &str) -> CapResult<Option<Vec<u8>>>;
     async fn set(&self, key: &str, value: Vec<u8>, ttl: Duration) -> CapResult<()>;
     async fn delete(&self, key: &str) -> CapResult<bool>;
@@ -155,6 +168,7 @@ pub trait Email: Send + Sync {
 #[derive(Clone, Default)]
 pub struct Capabilities {
     declared: Vec<Capability>,
+    namespace: String,
     pub(crate) sql: Option<Arc<dyn Sql>>,
     pub(crate) kv: Option<Arc<dyn Kv>>,
     pub(crate) cache: Option<Arc<dyn Cache>>,
@@ -191,12 +205,36 @@ impl Capabilities {
     pub fn declared(&self) -> &[Capability] {
         &self.declared
     }
+
+    /// Prefix for this plugin's SQL tables, e.g. `auth_core_`. Key-value and
+    /// cache keys are prefixed automatically; SQL tables must use this.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    /// `namespace()` + `name`, e.g. `table("users")` -> `auth_core_users`.
+    pub fn table(&self, name: &str) -> String {
+        format!("{}{name}", self.namespace)
+    }
+}
+
+/// A configured data provider, as reported in `/health` and by the CLI.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ProviderInfo {
+    /// The key in `app.yaml` providers: `db`, `cache` or `kv`.
+    pub slot: String,
+    /// `postgres`, `mysql`, `sqlite`, `redis` or `memory`.
+    pub kind: String,
+    pub capability: Capability,
+    /// Whether it can be switched or reconnected live (phase 7).
+    pub hot_load: bool,
 }
 
 /// What the host can provide. The host builds one per plugin with
 /// [`CapabilityProviders::grant`], limited to what the plugin declared.
 #[derive(Clone, Default)]
 pub struct CapabilityProviders {
+    pub info: Vec<ProviderInfo>,
     pub sql: Option<Arc<dyn Sql>>,
     pub kv: Option<Arc<dyn Kv>>,
     pub cache: Option<Arc<dyn Cache>>,
@@ -227,17 +265,77 @@ impl CapabilityProviders {
     /// with its id.
     pub fn grant(&self, plugin_id: &str, declared: &[Capability]) -> Capabilities {
         let has = |c| declared.contains(&c);
+        let ns = format!("{plugin_id}:");
         Capabilities {
             declared: declared.to_vec(),
+            namespace: format!("{}_", plugin_id.replace('-', "_")),
             sql: self.sql.clone().filter(|_| has(Capability::Sql)),
-            kv: self.kv.clone().filter(|_| has(Capability::Kv)),
-            cache: self.cache.clone().filter(|_| has(Capability::Cache)),
+            kv: self.kv.clone().filter(|_| has(Capability::Kv)).map(|inner| {
+                Arc::new(PrefixedKv {
+                    inner,
+                    prefix: ns.clone(),
+                }) as Arc<dyn Kv>
+            }),
+            cache: self
+                .cache
+                .clone()
+                .filter(|_| has(Capability::Cache))
+                .map(|inner| {
+                    Arc::new(PrefixedCache {
+                        inner,
+                        prefix: ns.clone(),
+                    }) as Arc<dyn Cache>
+                }),
             http: self.http.clone().filter(|_| has(Capability::HttpClient)),
             secrets: self.secrets.clone().filter(|_| has(Capability::Secrets)),
             crypto: self.crypto.clone().filter(|_| has(Capability::Crypto)),
             log: has(Capability::Log).then(|| Arc::new(TracingLog(plugin_id.to_string())) as Arc<dyn Log>),
             email: self.email.clone().filter(|_| has(Capability::Email)),
         }
+    }
+}
+
+/// Keeps each plugin's keys apart: `auth-core` writing `session:1` stores
+/// `auth-core:session:1`.
+struct PrefixedKv {
+    inner: Arc<dyn Kv>,
+    prefix: String,
+}
+
+#[async_trait]
+impl Kv for PrefixedKv {
+    async fn ping(&self) -> CapResult<()> {
+        self.inner.ping().await
+    }
+    async fn get(&self, key: &str) -> CapResult<Option<Vec<u8>>> {
+        self.inner.get(&format!("{}{key}", self.prefix)).await
+    }
+    async fn set(&self, key: &str, value: Vec<u8>) -> CapResult<()> {
+        self.inner.set(&format!("{}{key}", self.prefix), value).await
+    }
+    async fn delete(&self, key: &str) -> CapResult<bool> {
+        self.inner.delete(&format!("{}{key}", self.prefix)).await
+    }
+}
+
+struct PrefixedCache {
+    inner: Arc<dyn Cache>,
+    prefix: String,
+}
+
+#[async_trait]
+impl Cache for PrefixedCache {
+    async fn ping(&self) -> CapResult<()> {
+        self.inner.ping().await
+    }
+    async fn get(&self, key: &str) -> CapResult<Option<Vec<u8>>> {
+        self.inner.get(&format!("{}{key}", self.prefix)).await
+    }
+    async fn set(&self, key: &str, value: Vec<u8>, ttl: Duration) -> CapResult<()> {
+        self.inner.set(&format!("{}{key}", self.prefix), value, ttl).await
+    }
+    async fn delete(&self, key: &str) -> CapResult<bool> {
+        self.inner.delete(&format!("{}{key}", self.prefix)).await
     }
 }
 
@@ -260,5 +358,14 @@ impl Log for TracingLog {
 impl Secrets for HashMap<String, String> {
     fn get(&self, name: &str) -> Option<String> {
         HashMap::get(self, name).cloned()
+    }
+}
+
+impl fmt::Debug for CapabilityProviders {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CapabilityProviders")
+            .field("info", &self.info)
+            .field("available", &self.available())
+            .finish()
     }
 }
