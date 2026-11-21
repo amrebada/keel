@@ -177,12 +177,16 @@ pub async fn evaluate(
     for plugin in plugins {
         let m = plugin.manifest();
         let empty = Value::Object(Default::default());
-        let plugin_config = config
-            .plugins
-            .iter()
-            .find(|e| e.name() == m.id)
-            .map(|e| &e.config)
-            .unwrap_or(&empty);
+        // Defaults filled in, so `{config.public_url}` reads its default too.
+        let plugin_config = m.config_with_defaults(
+            config
+                .plugins
+                .iter()
+                .find(|e| e.name() == m.id)
+                .map(|e| &e.config)
+                .unwrap_or(&empty),
+        );
+        let plugin_config = &plugin_config;
         for (index, step) in m.setup.iter().enumerate() {
             let id = format!("{}/{}", m.id, step.id);
             let verify = step.verify();
@@ -231,8 +235,16 @@ pub async fn evaluate(
                     }
                 }
                 VerifyKind::PluginCheck => {
-                    let missing: Vec<String> = status
-                        .secrets
+                    // Secrets it produces plus any it lists under verify.keys.
+                    let mut needed = status.secrets.clone();
+                    needed.extend(
+                        verify
+                            .keys
+                            .iter()
+                            .filter(|k| !status.secrets.contains(k))
+                            .cloned(),
+                    );
+                    let missing: Vec<String> = needed
                         .iter()
                         .filter(|k| secrets.get(k).is_none_or(|v| v.trim().is_empty()))
                         .cloned()

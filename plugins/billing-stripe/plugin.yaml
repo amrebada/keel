@@ -1,6 +1,7 @@
 id: billing-stripe
 version: 0.1.0
 summary: Stripe subscriptions per tenant - plans in YAML, Checkout, customer portal, signed webhooks keeping subscription state, and a plan:x route guard.
+tags: [payments, billing, subscriptions, stripe, checkout, plans, invoices, saas]
 requires:
   host: "^0.1"
   capabilities: [sql, http-client, secrets, log]
@@ -35,7 +36,7 @@ setup:
     steps:
       - "Open https://dashboard.stripe.com/products and add a product per plan with a recurring price"
       - "Copy each price ID (price_...) into config.plans.<plan>.price in app.yaml"
-    verify: { type: plugin-check }
+    verify: { type: plugin-check, keys: [STRIPE_SECRET_KEY] }
     blocks: ["POST /billing/checkout"]
   - id: stripe-webhook
     title: Send Stripe events to this app

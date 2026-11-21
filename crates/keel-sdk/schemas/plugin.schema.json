@@ -22,6 +22,15 @@
       "minLength": 1,
       "maxLength": 200
     },
+    "tags": {
+      "type": "array",
+      "description": "Search words beyond the summary, e.g. payments, subscriptions.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "maxItems": 12
+    },
     "requires": {
       "type": "object",
       "additionalProperties": false,

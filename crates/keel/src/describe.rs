@@ -125,6 +125,7 @@ pub fn manifest_json(m: &Manifest) -> Value {
         "id": m.id,
         "version": m.version.to_string(),
         "summary": m.summary,
+        "tags": m.tags,
         "requires": {
             "host": m.host.to_string(),
             "capabilities": m.capabilities.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
@@ -158,13 +159,5 @@ pub fn minimal_config(m: &Manifest) -> Value {
 
 /// The plugin's config with schema defaults filled in for missing top-level keys.
 pub fn with_defaults(m: &Manifest, config: &Value) -> Value {
-    let mut out = config.as_object().cloned().unwrap_or_default();
-    if let Some(props) = m.config_schema.as_ref().and_then(|s| s["properties"].as_object()) {
-        for (k, p) in props {
-            if let (false, Some(d)) = (out.contains_key(k), p.get("default")) {
-                out.insert(k.clone(), d.clone());
-            }
-        }
-    }
-    Value::Object(out)
+    m.config_with_defaults(config)
 }

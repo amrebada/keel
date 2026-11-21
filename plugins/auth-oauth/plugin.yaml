@@ -1,6 +1,7 @@
 id: auth-oauth
 version: 0.1.0
 summary: Social login (OAuth2/OIDC) with presets for Google, Apple, Facebook, LinkedIn, GitHub, Microsoft and X; links accounts by verified email.
+tags: [auth, login, social-login, sso, oauth, oidc, google, apple, github, facebook, microsoft, linkedin]
 requires:
   host: "^0.1"
   capabilities: [sql, http-client, secrets, cache, crypto, log]

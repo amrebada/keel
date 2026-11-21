@@ -33,7 +33,7 @@ fn tools() -> Vec<Value> {
     vec![
         tool(
             "search_plugins",
-            "Search the plugins compiled into this Keel build by id or summary. Empty query lists all. Start here to find what to add instead of writing code.",
+            "Search the plugins compiled into this Keel build by id, summary and tags (e.g. payments, login, roles, email). Every word must match; empty query lists all. Start here to find what to add instead of writing code.",
             json!({ "query": { "type": "string", "description": "Words to match, e.g. 'stripe' or 'roles'" } }),
             &[],
         ),
@@ -157,10 +157,15 @@ impl Server {
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|p| {
+                        let tags: Vec<&str> = p["tags"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(Value::as_str).collect())
+                            .unwrap_or_default();
                         let hay = format!(
-                            "{} {}",
+                            "{} {} {}",
                             p["id"].as_str().unwrap_or(""),
-                            p["summary"].as_str().unwrap_or("")
+                            p["summary"].as_str().unwrap_or(""),
+                            tags.join(" ")
                         )
                         .to_lowercase();
                         words.iter().all(|w| hay.contains(w))

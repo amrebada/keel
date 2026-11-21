@@ -532,6 +532,9 @@ fn list(out: Out) {
         let m = p.manifest();
         let routes: Vec<String> = m.routes.iter().map(|r| r.to_string()).collect();
         text.push_str(&format!("{} {}  {}\n", m.id, m.version, m.summary));
+        if !m.tags.is_empty() {
+            text.push_str(&format!("    tags: {}\n", m.tags.join(", ")));
+        }
         if !routes.is_empty() {
             text.push_str(&format!("    routes: {}\n", routes.join(", ")));
         }
@@ -539,6 +542,7 @@ fn list(out: Out) {
             "id": m.id,
             "version": m.version.to_string(),
             "summary": m.summary,
+            "tags": m.tags,
             "capabilities": m.capabilities.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
             "routes": routes,
         }));

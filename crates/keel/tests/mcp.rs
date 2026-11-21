@@ -53,6 +53,7 @@ fn ai_client_flow() {
             json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
             call(3, "search_plugins", json!({ "query": "roles" })),
             call(4, "describe_plugin", json!({ "id": "rbac" })),
+            call(11, "search_plugins", json!({ "query": "payments" })),
             call(
                 5,
                 "validate_config",
@@ -65,7 +66,7 @@ fn ai_client_flow() {
             json!({ "jsonrpc": "2.0", "id": 10, "method": "unknown/method" }),
         ],
     );
-    assert_eq!(replies.len(), 10, "the notification gets no reply: {replies:#?}");
+    assert_eq!(replies.len(), 11, "the notification gets no reply: {replies:#?}");
     let by_id = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
     let r = by_id(1);
     assert_eq!(r["result"]["protocolVersion"], "2025-03-26");
@@ -89,6 +90,11 @@ fn ai_client_flow() {
     let found = &by_id(3)["result"]["structuredContent"]["plugins"];
     assert_eq!(found.as_array().unwrap().len(), 1, "{found}");
     assert_eq!(found[0]["id"], "rbac");
+    assert_eq!(
+        by_id(11)["result"]["structuredContent"]["plugins"][0]["id"],
+        "billing-stripe",
+        "tags are searched"
+    );
     let summary = by_id(4)["result"]["structuredContent"]["summary"]
         .as_str()
         .unwrap()

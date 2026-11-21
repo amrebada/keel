@@ -1,6 +1,7 @@
 id: auth-mfa
 version: 0.1.0
 summary: Second factor for auth-core logins - TOTP authenticator apps and one-time recovery codes, with replay protection and lockout after failed codes.
+tags: [auth, mfa, 2fa, two-factor, totp, security]
 requires:
   host: "^0.1"
   capabilities: [sql, crypto, log]

@@ -423,3 +423,31 @@ async fn setup_check_reports_a_missing_price() {
         (StatusCode::SERVICE_UNAVAILABLE, Some("setup_incomplete"))
     );
 }
+
+#[tokio::test]
+async fn offline_setup_status_without_key() {
+    // What `keel setup status` sees: no plugin checks run, no secrets set.
+    let config = AppConfig::load_str(
+        "app: t\nplugins:\n  - use: billing-stripe\n    config: { plans: { pro: { price: price_1 } } }\n",
+        "app.yaml",
+        &MapSecrets::default(),
+    )
+    .unwrap();
+    let plugin: Arc<dyn Plugin> = Arc::new(keel_plugin_billing_stripe::BillingStripe::new());
+    let report = keel_core::setup::evaluate(
+        &config,
+        &[plugin],
+        &MapSecrets::default(),
+        &keel_core::setup::SetupState::default(),
+        false,
+    )
+    .await;
+    let prices = report.find("billing-stripe/stripe-prices").unwrap();
+    assert_eq!(prices.missing_secrets, ["STRIPE_SECRET_KEY"], "{prices:?}");
+    let webhook = report.find("billing-stripe/stripe-webhook").unwrap();
+    assert!(
+        webhook.instructions[0].contains("http://localhost:8080/billing/webhook"),
+        "the public_url default is filled in: {:?}",
+        webhook.instructions
+    );
+}
