@@ -8,6 +8,7 @@ use keel_core::PluginRegistry;
 pub fn builtin() -> PluginRegistry {
     PluginRegistry::new()
         // keel:plugins
+        .register(keel_plugin_auth_core::AuthCore::new())
         .register(keel_plugin_ping::Ping::new())
     // keel:plugins:end
 }

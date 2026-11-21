@@ -23,6 +23,7 @@ tokio.workspace = true
 tracing-subscriber.workspace = true
 
 # keel:plugins (managed by `keel new-plugin`; one line per compiled-in plugin)
+keel-plugin-auth-core = { path = "../../plugins/auth-core" }
 keel-plugin-ping = { path = "../../plugins/ping" }
 # keel:plugins:end
 

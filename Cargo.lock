@@ -1163,6 +1163,7 @@ dependencies = [
  "anyhow",
  "clap",
  "keel-core",
+ "keel-plugin-auth-core",
  "keel-plugin-ping",
  "keel-providers",
  "keel-sdk",
@@ -1193,6 +1194,25 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "keel-plugin-auth-core"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "hmac",
+ "http-body-util",
+ "keel-core",
+ "keel-providers",
+ "keel-sdk",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower",
  "uuid",
 ]
 
