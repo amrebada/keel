@@ -90,3 +90,49 @@ async fn serves_over_tcp_and_emits_lifecycle_events() {
     task.await.unwrap().unwrap();
     assert_eq!(*seen.lock().unwrap(), vec!["host.started", "host.stopped"]);
 }
+
+struct DownKv;
+
+#[async_trait::async_trait]
+impl keel_sdk::capabilities::Kv for DownKv {
+    async fn get(&self, _: &str) -> keel_sdk::capabilities::CapResult<Option<Vec<u8>>> {
+        Err(keel_sdk::capabilities::CapabilityError::Failed(
+            "connection refused".into(),
+        ))
+    }
+    async fn set(&self, _: &str, _: Vec<u8>) -> keel_sdk::capabilities::CapResult<()> {
+        unreachable!()
+    }
+    async fn delete(&self, _: &str) -> keel_sdk::capabilities::CapResult<bool> {
+        unreachable!()
+    }
+}
+
+#[tokio::test]
+async fn health_is_503_when_a_provider_is_down() {
+    use keel_sdk::capabilities::{Capability, CapabilityProviders, ProviderInfo};
+    let config = AppConfig::load_str(
+        "app: team-tasks\nproviders:\n  kv: { use: redis, url: redis://x }\n",
+        "app.yaml",
+        &MapSecrets::default(),
+    )
+    .unwrap();
+    let providers = CapabilityProviders {
+        kv: Some(Arc::new(DownKv)),
+        info: vec![ProviderInfo {
+            slot: "kv".into(),
+            kind: "redis".into(),
+            capability: Capability::Kv,
+            hot_load: true,
+        }],
+        ..Default::default()
+    };
+    let host = Host::start(config, &keel_core::PluginRegistry::new(), &providers)
+        .await
+        .unwrap();
+    let (status, body) = get_json(host.router(), "/health").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["status"], "degraded");
+    assert_eq!(body["providers"][0]["status"], "down");
+    assert_eq!(body["providers"][0]["reason"], "connection refused");
+}

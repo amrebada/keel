@@ -10,7 +10,7 @@ Phase 3 of 8 (data providers and CLI) is done:
 
 - **Host core (phase 1):** loads and validates `app.yaml`, resolves `${secret:NAME}` from environment variables, runs an event hook bus, serves `/health`.
 - **Plugin contract (phase 2):** plugins are Rust crates compiled into the binary. Each has a `plugin.yaml` manifest, a `config.schema.json`, and a type implementing the `Plugin` trait from `keel-sdk`. The host starts only the plugins `app.yaml` lists, after checking versions, dependencies, capabilities, config and route ownership.
-- **Data providers (phase 3):** `providers:` in `app.yaml` picks SQL (sqlite, postgres, mysql), cache and key-value (memory or redis). Switching from SQLite to Postgres and Redis is a YAML change. Each plugin gets its own key prefix (`<id>:`) and table prefix (`<id>_`). `/health` reports every provider.
+- **Data providers (phase 3):** `providers:` in `app.yaml` picks SQL (sqlite, postgres, mysql), cache and key-value (memory or redis). Switching from SQLite to Postgres and Redis is a YAML change. Each plugin gets its own key prefix (`<id>:`) and table prefix (`<id>_`). `/health` reports every provider and returns 503 when anything is down.
 - **CLI (phase 3):** `init`, `dev` (reloads on `app.yaml` changes and keeps running on a broken edit), `add`, `plugins list/describe --ai`, `config validate/expand`, and `--json` on every command for AI tools.
 
 ## Try it
@@ -18,7 +18,7 @@ Phase 3 of 8 (data providers and CLI) is done:
 ```sh
 cargo install --path crates/keel   # or use ./target/debug/keel after cargo build
 keel init shop && cd shop          # app.yaml on SQLite + in-memory cache/kv
-keel dev                           # serves 127.0.0.1:8080, reloads on edits
+keel dev                           # serves 127.0.0.1:8080, reloads on edits, loads .env
 curl localhost:8080/health
 curl localhost:8080/ping
 ```

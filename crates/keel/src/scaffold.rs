@@ -327,7 +327,7 @@ plugins:
     )
 }
 
-const TEMPLATE_ENV: &str = "# Secrets referenced as ${secret:NAME} in app.yaml are read from env vars.\n# DATABASE_URL=postgres://user:pass@localhost:5432/app\n# REDIS_URL=redis://localhost:6379\n";
+const TEMPLATE_ENV: &str = "# Copy to .env: keel dev, serve and check load it (real env vars win).\n# Secrets referenced as ${secret:NAME} in app.yaml are read from env vars.\n# DATABASE_URL=postgres://user:pass@localhost:5432/app\n# REDIS_URL=redis://localhost:6379\n";
 
 #[cfg(test)]
 mod init_tests {

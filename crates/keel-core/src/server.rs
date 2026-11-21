@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::routing::{get, MethodRouter};
 use axum::{Json, Router};
 use keel_sdk::capabilities::{Capability, CapabilityProviders};
@@ -129,7 +130,9 @@ impl Host {
     }
 }
 
-async fn health(State(s): State<HostState>) -> Json<Value> {
+/// 200 when everything is ok, 503 when a plugin or provider is down, so load
+/// balancers and orchestrators stop routing to a degraded instance.
+async fn health(State(s): State<HostState>) -> (StatusCode, Json<Value>) {
     let mut plugins = Vec::new();
     let mut all_ok = true;
     for p in s.plugins.iter() {
@@ -170,12 +173,18 @@ async fn health(State(s): State<HostState>) -> Json<Value> {
         }
         providers.push(entry);
     }
-    Json(json!({
+    let code = if all_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    let body = Json(json!({
         "status": if all_ok { "ok" } else { "degraded" },
         "app": s.config.app,
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_secs": s.started.elapsed().as_secs(),
         "plugins": plugins,
         "providers": providers,
-    }))
+    }));
+    (code, body)
 }

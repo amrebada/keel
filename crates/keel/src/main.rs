@@ -1,4 +1,5 @@
 mod describe;
+mod dotenv;
 mod output;
 mod plugins;
 mod scaffold;
@@ -122,6 +123,21 @@ async fn main() -> ExitCode {
             )
             .with_writer(std::io::stderr)
             .init();
+    }
+
+    // Commands that read app.yaml also pick up a `.env` beside it.
+    if let Command::Serve { config }
+    | Command::Dev { config }
+    | Command::Check { config }
+    | Command::Config {
+        command: ConfigCommand::Validate { config } | ConfigCommand::Expand { config },
+    } = &cli.command
+    {
+        if let Some(path) = dotenv::load_beside(config) {
+            if serving {
+                eprintln!("keel: loaded {}", path.display());
+            }
+        }
     }
 
     let result = match cli.command {
