@@ -7,7 +7,7 @@
 //! | `db` | `sql` | `postgres`, `mysql`, `sqlite` |
 //! | `cache` | `cache` | `redis`, `memory` |
 //! | `kv` | `kv` | `redis`, `memory` |
-//! | `email` | `email` | `console` |
+//! | `email` | `email` | `console`, `smtp`, `resend`, `ses` (all take `templates:`) |
 //!
 //! `crypto` and `http-client` are always available.
 //!
@@ -15,6 +15,7 @@
 //! is a YAML change.
 
 mod builtin;
+mod email;
 mod memory;
 mod redis_store;
 mod secret_store;
@@ -28,6 +29,7 @@ use keel_sdk::capabilities::{Capability, CapabilityProviders, DegradeLevel, Prov
 use serde_json::Value;
 
 pub use builtin::{ConsoleEmail, DefaultCrypto, ReqwestClient};
+pub use email::{ResendEmail, SesEmail, SmtpEmail, Template, TemplatedEmail};
 pub use memory::MemoryStore;
 pub use redis_store::RedisStore;
 pub use secret_store::{secret_source, LayeredSecrets};
@@ -144,19 +146,62 @@ pub async fn connect(
                 out.info.push(info(slot, cfg, cap, true));
             }
             "email" => {
-                if kind != "console" {
-                    return Err(ProviderError::WrongKind {
+                let set = &cfg.settings;
+                let get = |k: &str| set.get(k).and_then(Value::as_str).map(str::to_string);
+                let need = |k: &str| {
+                    get(k).ok_or_else(|| ProviderError::Connect {
                         slot: slot.clone(),
-                        kind: kind.into(),
-                        allowed: "console",
-                    });
-                }
-                let from = cfg
-                    .settings
-                    .get("from")
-                    .and_then(Value::as_str)
-                    .unwrap_or("keel@localhost");
-                out.email = Some(Arc::new(ConsoleEmail::new(from)));
+                        kind: kind.to_string(),
+                        message: format!("`{k}` is required"),
+                    })
+                };
+                let from = get("from").unwrap_or_else(|| "keel@localhost".into());
+                let http = out.http.clone().expect("http is always set");
+                let inner: Arc<dyn keel_sdk::capabilities::Email> = match kind {
+                    "console" => Arc::new(ConsoleEmail::new(from)),
+                    "resend" => Arc::new(email::ResendEmail {
+                        http,
+                        api_key: need("api_key")?,
+                        from: need("from")?,
+                        base_url: get("base_url").unwrap_or_else(|| "https://api.resend.com".into()),
+                    }),
+                    "ses" => {
+                        let region = need("region")?;
+                        Arc::new(email::SesEmail {
+                            http,
+                            endpoint: get("endpoint")
+                                .unwrap_or_else(|| format!("https://email.{region}.amazonaws.com")),
+                            region,
+                            access_key_id: need("access_key_id")?,
+                            secret_access_key: need("secret_access_key")?,
+                            session_token: get("session_token"),
+                            from: need("from")?,
+                        })
+                    }
+                    "smtp" => Arc::new(
+                        email::SmtpEmail::new(
+                            &need("host")?,
+                            set.get("port").and_then(Value::as_u64).map(|p| p as u16),
+                            get("username").as_deref(),
+                            get("password").as_deref(),
+                            &get("tls").unwrap_or_else(|| "starttls".into()),
+                            &need("from")?,
+                        )
+                        .map_err(|message| ProviderError::Connect {
+                            slot: slot.clone(),
+                            kind: kind.to_string(),
+                            message,
+                        })?,
+                    ),
+                    _ => {
+                        return Err(ProviderError::WrongKind {
+                            slot: slot.clone(),
+                            kind: kind.into(),
+                            allowed: "console, smtp, resend, ses",
+                        })
+                    }
+                };
+                out.email = Some(Arc::new(email::TemplatedEmail::new(inner, set)));
                 out.info.push(info(slot, cfg, Capability::Email, true));
             }
             _ => return Err(ProviderError::UnknownSlot(slot.clone())),

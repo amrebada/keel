@@ -175,6 +175,11 @@ pub struct EmailMessage {
     pub subject: String,
     pub text: String,
     pub html: Option<String>,
+    /// Template id, e.g. `auth.verify`. When `app.yaml` defines this template
+    /// under `providers.email.templates`, its subject, text and html replace
+    /// the ones above, with `{{name}}` filled from `vars`.
+    pub template: Option<String>,
+    pub vars: Map<String, Value>,
 }
 
 #[async_trait]
