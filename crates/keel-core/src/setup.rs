@@ -177,12 +177,16 @@ pub async fn evaluate(
     for plugin in plugins {
         let m = plugin.manifest();
         let empty = Value::Object(Default::default());
-        let plugin_config = config
-            .plugins
-            .iter()
-            .find(|e| e.name() == m.id)
-            .map(|e| &e.config)
-            .unwrap_or(&empty);
+        // Defaults filled in, so `{config.public_url}` reads its default too.
+        let plugin_config = m.config_with_defaults(
+            config
+                .plugins
+                .iter()
+                .find(|e| e.name() == m.id)
+                .map(|e| &e.config)
+                .unwrap_or(&empty),
+        );
+        let plugin_config = &plugin_config;
         for (index, step) in m.setup.iter().enumerate() {
             let id = format!("{}/{}", m.id, step.id);
             let verify = step.verify();
@@ -231,8 +235,16 @@ pub async fn evaluate(
                     }
                 }
                 VerifyKind::PluginCheck => {
-                    let missing: Vec<String> = status
-                        .secrets
+                    // Secrets it produces plus any it lists under verify.keys.
+                    let mut needed = status.secrets.clone();
+                    needed.extend(
+                        verify
+                            .keys
+                            .iter()
+                            .filter(|k| !status.secrets.contains(k))
+                            .cloned(),
+                    );
+                    let missing: Vec<String> = needed
                         .iter()
                         .filter(|k| secrets.get(k).is_none_or(|v| v.trim().is_empty()))
                         .cloned()
@@ -261,6 +273,62 @@ pub async fn evaluate(
             report.steps.push(status);
         }
     }
+    report.steps.extend(provider_steps(config, state));
     report.complete = report.steps.iter().all(|s| !s.incomplete());
     report
+}
+
+/// Steps the configured providers need, e.g. verifying the email domain
+/// for Resend, SES or SMTP. They never block routes.
+fn provider_steps(config: &AppConfig, state: &SetupState) -> Vec<StepStatus> {
+    let mut out = Vec::new();
+    if let Some(email) = config.providers.get("email") {
+        let from = email
+            .settings
+            .get("from")
+            .and_then(Value::as_str)
+            .unwrap_or("your sender address");
+        let domain = from
+            .rsplit('@')
+            .next()
+            .map(|d| d.trim_end_matches('>').trim())
+            .filter(|d| !d.is_empty() && from.contains('@'))
+            .unwrap_or("your domain");
+        let instructions: Option<Vec<String>> = match email.kind.as_str() {
+            "resend" => Some(vec![
+                format!("Open https://resend.com/domains and add {domain}"),
+                "Add the SPF (MX + TXT) and DKIM (TXT) records Resend shows at your DNS host".into(),
+                "Wait until Resend shows the domain as Verified".into(),
+            ]),
+            "ses" => Some(vec![
+                format!("In the SES console (Verified identities), create a domain identity for {domain}"),
+                "Add the three DKIM CNAME records SES shows at your DNS host".into(),
+                "Add an SPF TXT record including amazonses.com and a DMARC record".into(),
+                "Request production access to leave the SES sandbox (otherwise only verified recipients get mail)".into(),
+            ]),
+            "smtp" => Some(vec![
+                format!("Ask your SMTP provider how to authorize {domain}: usually an SPF TXT record and a DKIM key"),
+                "Add those records at your DNS host and confirm with the provider".into(),
+            ]),
+            _ => None,
+        };
+        if let Some(instructions) = instructions {
+            let id = "providers/email-domain".to_string();
+            let done = state.done.contains_key(&id);
+            out.push(StepStatus {
+                next: (!done).then(|| format!("when the domain is verified, run `keel setup done {id}`")),
+                id,
+                plugin: "providers".into(),
+                title: format!("Verify {domain} for sending email ({})", email.kind),
+                kind: SetupKind::Dns,
+                status: if done { StepState::Done } else { StepState::Missing },
+                reason: None,
+                instructions: if done { vec![] } else { instructions },
+                secrets: vec![],
+                missing_secrets: vec![],
+                requires_paid_account: false,
+            });
+        }
+    }
+    out
 }

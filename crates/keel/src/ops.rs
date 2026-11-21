@@ -82,6 +82,16 @@ pub async fn setup_mark(out: Out, path: &Path, id: &str, done: bool) -> Result<(
     let Some((plugin_id, step_id)) = id.split_once('/') else {
         bail!("`{id}`: use <plugin>/<step>, as `keel setup status` prints it");
     };
+    if plugin_id == "providers" {
+        let sends = config
+            .providers
+            .get("email")
+            .is_some_and(|e| ["resend", "ses", "smtp"].contains(&e.kind.as_str()));
+        if step_id != "email-domain" || !sends {
+            bail!("`{id}` is not a setup step; provider steps: providers/email-domain (with a smtp, resend or ses email provider)");
+        }
+        return save_mark(out, path, id, done);
+    }
     let plugin = config
         .plugins
         .iter()
@@ -114,6 +124,10 @@ pub async fn setup_mark(out: Out, path: &Path, id: &str, done: bool) -> Result<(
             }
         );
     }
+    save_mark(out, path, id, done)
+}
+
+fn save_mark(out: Out, path: &Path, id: &str, done: bool) -> Result<()> {
     let state_path = SetupState::path_for(path);
     let mut state = SetupState::load(&state_path)?;
     if done {

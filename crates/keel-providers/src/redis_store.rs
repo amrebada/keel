@@ -85,4 +85,21 @@ impl Cache for RedisStore {
     async fn delete(&self, key: &str) -> CapResult<bool> {
         self.remove(key).await
     }
+    async fn incr(&self, key: &str, ttl: Duration) -> CapResult<i64> {
+        let key = self.key(key);
+        let ms = ttl.as_millis().max(1) as u64;
+        // INCR then set the expiry only if the key has none (first hit).
+        let (n, _): (i64, i64) = redis::pipe()
+            .atomic()
+            .cmd("INCR")
+            .arg(&key)
+            .cmd("PEXPIRE")
+            .arg(&key)
+            .arg(ms)
+            .arg("NX")
+            .query_async(&mut self.conn.clone())
+            .await
+            .map_err(err)?;
+        Ok(n)
+    }
 }

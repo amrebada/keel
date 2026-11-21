@@ -1,0 +1,26 @@
+id: rbac
+version: 0.1.0
+summary: Roles and permissions from YAML with inheritance, per-user grants and roles scoped to a tenant (X-Tenant-Id). Powers the role:x and permission:x route guards.
+tags: [authorization, roles, permissions, access-control, teams, tenants, multi-tenancy]
+requires:
+  host: "^0.1"
+  capabilities: [sql, log]
+  plugins:
+    auth-core: "^0.1"
+provides:
+  routes:
+    - GET /rbac/roles
+    - GET /rbac/me
+    - GET /rbac/users/{id}
+    - POST /rbac/users/{id}/roles
+    - DELETE /rbac/users/{id}/roles/{role}
+    - POST /rbac/users/{id}/permissions
+    - DELETE /rbac/users/{id}/permissions/{permission}
+  events: [rbac.role.assigned, rbac.role.removed]
+  interfaces: [authorizer]
+consumes:
+  events: [auth.user.created]
+config: config.schema.json
+runtime_config: []
+migrations: built-in
+degrade_level: error

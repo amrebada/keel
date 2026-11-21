@@ -9,8 +9,10 @@ pub fn builtin() -> PluginRegistry {
     PluginRegistry::new()
         // keel:plugins
         .register(keel_plugin_auth_core::AuthCore::new())
+        .register(keel_plugin_billing_stripe::BillingStripe::new())
         .register(keel_plugin_auth_mfa::AuthMfa::new())
         .register(keel_plugin_auth_oauth::AuthOauth::new())
         .register(keel_plugin_ping::Ping::new())
+        .register(keel_plugin_rbac::Rbac::new())
     // keel:plugins:end
 }

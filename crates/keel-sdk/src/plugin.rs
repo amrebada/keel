@@ -230,6 +230,12 @@ impl InitContext {
             .ok_or_else(|| PluginError::MissingInterface(name.to_string()))
     }
 
+    /// The shared interface registry, for optional interfaces looked up at
+    /// request time (a plugin that works with or without `rbac`, say).
+    pub fn interfaces(&self) -> Interfaces {
+        self.interfaces.clone()
+    }
+
     pub fn routes(&mut self) -> &mut Routes {
         &mut self.routes
     }

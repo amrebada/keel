@@ -114,12 +114,24 @@ impl PluginEntry {
     }
 }
 
-/// Guards that apply to a route pattern. Enforced from phase 5 (E8).
+/// Guards and request validation for a route pattern, keyed in `routes:` by
+/// `[METHOD ]/path` (`*` one segment, `**` the rest, `{name}` a captured segment).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RouteRule {
+    /// Every guard must pass (see [`keel_sdk::authz::Guard`]).
     #[serde(default)]
     pub guard: Vec<String>,
+    #[serde(default)]
+    pub validate: Option<ValidateRule>,
+}
+
+/// JSON Schemas a request must match.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ValidateRule {
+    pub body: Option<Value>,
+    pub query: Option<Value>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -219,13 +231,21 @@ impl AppConfig {
             });
         }
 
-        serde_json::from_value(value).map_err(|e| ConfigError::Invalid {
+        let config: Self = serde_json::from_value(value).map_err(|e| ConfigError::Invalid {
             file: file.to_string(),
             issues: vec![Issue {
                 path: "(root)".into(),
                 message: e.to_string(),
             }],
-        })
+        })?;
+        let issues = crate::routes::check(&config.routes);
+        if !issues.is_empty() {
+            return Err(ConfigError::Invalid {
+                file: file.to_string(),
+                issues,
+            });
+        }
+        Ok(config)
     }
 }
 

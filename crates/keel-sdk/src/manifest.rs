@@ -19,6 +19,8 @@ pub struct Manifest {
     pub id: String,
     pub version: Version,
     pub summary: String,
+    /// Extra search words (`keel plugins list`, MCP `search_plugins`).
+    pub tags: Vec<String>,
     /// Host versions this plugin works with. Defaults to any.
     pub host: VersionReq,
     pub capabilities: Vec<Capability>,
@@ -66,6 +68,8 @@ struct Raw {
     id: String,
     version: String,
     summary: String,
+    #[serde(default)]
+    tags: Vec<String>,
     #[serde(default)]
     requires: RawRequires,
     #[serde(default)]
@@ -217,6 +221,7 @@ impl Manifest {
             id: raw.id,
             version: version.expect("checked above"),
             summary: raw.summary,
+            tags: raw.tags,
             host: host.expect("checked above"),
             capabilities,
             plugins,
@@ -249,6 +254,23 @@ impl Manifest {
                 _ => vec![Issue::new("(root)", "this plugin takes no config")],
             },
         }
+    }
+
+    /// `config` with schema defaults filled in for missing top-level keys.
+    pub fn config_with_defaults(&self, config: &Value) -> Value {
+        let mut out = config.as_object().cloned().unwrap_or_default();
+        if let Some(props) = self
+            .config_schema
+            .as_ref()
+            .and_then(|s| s["properties"].as_object())
+        {
+            for (k, p) in props {
+                if let (false, Some(d)) = (out.contains_key(k), p.get("default")) {
+                    out.insert(k.clone(), d.clone());
+                }
+            }
+        }
+        Value::Object(out)
     }
 
     /// Whether this plugin declares `route`.

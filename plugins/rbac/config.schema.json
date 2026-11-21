@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "roles": {
+      "type": "object",
+      "description": "Role name to its permissions and the roles it inherits. `*` is every permission; `posts.*` every permission starting with `posts.`.",
+      "default": {
+        "admin": { "permissions": ["*"] },
+        "member": { "permissions": [] }
+      },
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "permissions": { "type": "array", "items": { "type": "string", "pattern": "^(\\*|[a-z0-9_-]+(\\.[a-z0-9_-]+)*(\\.\\*)?)$" }, "default": [] },
+          "inherits": { "type": "array", "items": { "type": "string" }, "default": [] }
+        }
+      }
+    },
+    "default_role": {
+      "type": ["string", "null"],
+      "default": "member",
+      "description": "Global role given to every new user; null gives none."
+    },
+    "admins": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Emails that get the admin_role globally, on signup or at start if the account exists. Bootstraps the first admin."
+    },
+    "admin_role": { "type": "string", "default": "admin" },
+    "manage_permission": {
+      "type": "string",
+      "default": "rbac.manage",
+      "description": "Permission needed to change roles and grants. Held in a tenant, it lets the holder manage that tenant only."
+    }
+  }
+}

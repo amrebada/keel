@@ -117,6 +117,17 @@ pub trait Cache: Send + Sync {
     async fn get(&self, key: &str) -> CapResult<Option<Vec<u8>>>;
     async fn set(&self, key: &str, value: Vec<u8>, ttl: Duration) -> CapResult<()>;
     async fn delete(&self, key: &str) -> CapResult<bool>;
+    /// Adds 1 to a counter and returns the new value. The first increment
+    /// starts the counter's `ttl`; later ones keep it (fixed windows for
+    /// rate limits). The default is not atomic; providers override it.
+    async fn incr(&self, key: &str, ttl: Duration) -> CapResult<i64> {
+        let n = match self.get(key).await? {
+            Some(b) => String::from_utf8_lossy(&b).parse::<i64>().unwrap_or(0),
+            None => 0,
+        } + 1;
+        self.set(key, n.to_string().into_bytes(), ttl).await?;
+        Ok(n)
+    }
 }
 
 /// Outbound HTTP request.
@@ -164,6 +175,11 @@ pub struct EmailMessage {
     pub subject: String,
     pub text: String,
     pub html: Option<String>,
+    /// Template id, e.g. `auth.verify`. When `app.yaml` defines this template
+    /// under `providers.email.templates`, its subject, text and html replace
+    /// the ones above, with `{{name}}` filled from `vars`.
+    pub template: Option<String>,
+    pub vars: Map<String, Value>,
 }
 
 #[async_trait]
@@ -378,6 +394,9 @@ impl Cache for PrefixedCache {
     }
     async fn delete(&self, key: &str) -> CapResult<bool> {
         self.inner.delete(&format!("{}{key}", self.prefix)).await
+    }
+    async fn incr(&self, key: &str, ttl: Duration) -> CapResult<i64> {
+        self.inner.incr(&format!("{}{key}", self.prefix), ttl).await
     }
 }
 

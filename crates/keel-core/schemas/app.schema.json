@@ -195,16 +195,95 @@
             "use"
           ],
           "additionalProperties": false,
-          "description": "Outgoing email. console prints messages to the log (development). SMTP, Resend and SES arrive in phase 5.",
+          "description": "Outgoing email. console prints messages to the log (development); smtp, resend and ses send for real. templates override the subject, text and html of plugin emails by template id.",
           "properties": {
             "use": {
               "enum": [
-                "console"
+                "console",
+                "smtp",
+                "resend",
+                "ses"
               ]
             },
             "from": {
               "type": "string",
-              "minLength": 3
+              "minLength": 3,
+              "description": "Sender, e.g. \"Shop <hello@shop.com>\""
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1,
+              "description": "smtp: server host"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tls": {
+              "enum": [
+                "starttls",
+                "tls",
+                "none"
+              ],
+              "description": "smtp: starttls (587, default), tls (465) or none (local relay)"
+            },
+            "api_key": {
+              "type": "string",
+              "minLength": 1,
+              "description": "resend: API key, as ${secret:RESEND_API_KEY}"
+            },
+            "base_url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1,
+              "description": "ses: AWS region, e.g. us-east-1"
+            },
+            "access_key_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secret_access_key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "session_token": {
+              "type": "string",
+              "minLength": 1
+            },
+            "endpoint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "templates": {
+              "type": "object",
+              "description": "Template id (e.g. auth.verify, auth.reset, auth.magic_link) to subject/text/html with {{var}} placeholders",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "html": {
+                    "type": "string"
+                  }
+                }
+              }
             },
             "degrade_level": {
               "enum": [
@@ -213,7 +292,56 @@
                 "error"
               ]
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "use": {
+                    "const": "smtp"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "host",
+                  "from"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "use": {
+                    "const": "resend"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "api_key",
+                  "from"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "use": {
+                    "const": "ses"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "region",
+                  "access_key_id",
+                  "secret_access_key",
+                  "from"
+                ]
+              }
+            }
+          ]
         }
       }
     },
@@ -254,9 +382,29 @@
             "items": {
               "type": "string",
               "minLength": 1
+            },
+            "description": "All must pass: authenticated, role:x, permission:x, owner:param, rate-limit:n/period, any(...), all(...), or a plugin guard such as plan:x."
+          },
+          "validate": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "JSON Schemas the request must match; failures answer 422 validation_failed.",
+            "properties": {
+              "body": {
+                "type": "object",
+                "description": "JSON Schema for the JSON body"
+              },
+              "query": {
+                "type": "object",
+                "description": "JSON Schema for the query string; values are coerced to the property's type"
+              }
             }
           }
         }
+      },
+      "description": "Guards and validation by route pattern: \"[METHOD ]/path\" where * is one segment, ** the rest and {name} a captured segment. Every matching rule applies.",
+      "propertyNames": {
+        "pattern": "^((GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) )?/"
       }
     },
     "secrets": {

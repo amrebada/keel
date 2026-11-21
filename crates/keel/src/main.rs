@@ -1,5 +1,6 @@
 mod describe;
 mod dotenv;
+mod mcp;
 mod ops;
 mod output;
 mod plugins;
@@ -93,6 +94,13 @@ enum Command {
         #[arg(long = "allow-destructive", value_name = "PLUGIN/ID")]
         allow_destructive: Vec<String>,
     },
+    /// Serve the Model Context Protocol on stdio for AI clients: search and
+    /// describe plugins, read, validate and apply app.yaml, setup status, logs.
+    /// Add to Claude Code with `claude mcp add keel -- keel mcp -c /path/to/app.yaml`.
+    Mcp {
+        #[arg(short, long, default_value = "app.yaml")]
+        config: PathBuf,
+    },
     /// Create a plugin crate under plugins/ and compile it into this binary.
     NewPlugin {
         /// Plugin id, e.g. `hello` or `stripe-billing`.
@@ -160,11 +168,21 @@ async fn main() -> ExitCode {
     let out = Out { json: cli.json };
     let serving = matches!(cli.command, Command::Serve { .. } | Command::Dev { .. });
     if serving || std::env::var_os("RUST_LOG").is_some() {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-            )
-            .with_writer(std::io::stderr)
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        // Servers also log to .keel/keel.log beside app.yaml (read by `keel mcp`).
+        let file = match &cli.command {
+            Command::Serve { config } | Command::Dev { config } => log_file(config),
+            _ => None,
+        };
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+            .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+            .with(file.map(|f| {
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(std::sync::Mutex::new(f))
+            }))
             .init();
     }
 
@@ -228,6 +246,7 @@ async fn main() -> ExitCode {
             apply,
             allow_destructive,
         } => ops::migrate(out, &config, apply, &allow_destructive).await,
+        Command::Mcp { config } => mcp::run(&config).await,
         Command::NewPlugin { id } => new_plugin(out, &id),
     };
     match result {
@@ -238,6 +257,21 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `.keel/keel.log` beside app.yaml, appended to; moved to keel.log.1 past 5 MB.
+fn log_file(config: &Path) -> Option<std::fs::File> {
+    let dir = SetupState::path_for(config).parent()?.to_path_buf();
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join("keel.log");
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 5 * 1024 * 1024) {
+        let _ = std::fs::rename(&path, dir.join("keel.log.1"));
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .ok()
 }
 
 /// Capabilities that need no provider, for static checks.
@@ -498,6 +532,9 @@ fn list(out: Out) {
         let m = p.manifest();
         let routes: Vec<String> = m.routes.iter().map(|r| r.to_string()).collect();
         text.push_str(&format!("{} {}  {}\n", m.id, m.version, m.summary));
+        if !m.tags.is_empty() {
+            text.push_str(&format!("    tags: {}\n", m.tags.join(", ")));
+        }
         if !routes.is_empty() {
             text.push_str(&format!("    routes: {}\n", routes.join(", ")));
         }
@@ -505,6 +542,7 @@ fn list(out: Out) {
             "id": m.id,
             "version": m.version.to_string(),
             "summary": m.summary,
+            "tags": m.tags,
             "capabilities": m.capabilities.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
             "routes": routes,
         }));

@@ -9,6 +9,7 @@
 //! only through capabilities ([`capabilities`]) and events ([`HookBus`]).
 
 pub mod auth;
+pub mod authz;
 pub mod capabilities;
 pub mod hooks;
 pub mod http;

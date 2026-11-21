@@ -1,0 +1,21 @@
+[package]
+name = "keel-plugin-rbac"
+description = "Keel rbac: roles, permissions, inheritance, per-user grants and tenant-scoped roles"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+keel-sdk.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+keel-core.workspace = true
+keel-providers.workspace = true
+keel-plugin-auth-core = { path = "../auth-core" }
+tokio.workspace = true
+tower.workspace = true
+http-body-util.workspace = true

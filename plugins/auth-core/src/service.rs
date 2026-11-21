@@ -299,13 +299,32 @@ impl Service {
             .map(str::to_string))
     }
 
-    async fn send(&self, to: &str, subject: &str, text: String) -> Result<(), ApiError> {
+    /// Sends with a template id, so `app.yaml` can restyle the email; the
+    /// text here is the default. Vars: `link`, `email`, `app_url`, plus `extra`.
+    async fn send(
+        &self,
+        template: &str,
+        to: &str,
+        link: &str,
+        subject: &str,
+        text: String,
+        extra: Value,
+    ) -> Result<(), ApiError> {
+        let mut vars = serde_json::Map::new();
+        vars.insert("link".into(), json!(link));
+        vars.insert("email".into(), json!(to));
+        vars.insert("app_url".into(), json!(self.settings.app_url));
+        if let Value::Object(m) = extra {
+            vars.extend(m);
+        }
         self.email
             .send(EmailMessage {
                 to: vec![to.to_string()],
                 subject: subject.to_string(),
                 text,
                 html: None,
+                template: Some(template.to_string()),
+                vars,
             })
             .await
             .map_err(ApiError::internal)
@@ -320,9 +339,12 @@ impl Service {
             .await?;
         let link = self.settings.link(&self.settings.verify_link, &token);
         self.send(
+            "auth.verify",
             email,
+            &link,
             "Confirm your email",
             format!("Confirm your email address by opening this link:\n\n{link}\n\nIf you did not sign up, ignore this email."),
+            json!({ "name": user.name }),
         )
         .await
     }
@@ -603,9 +625,12 @@ impl Service {
                 .await?;
             let link = self.settings.link(&self.settings.reset_link, &token);
             self.send(
+                "auth.reset",
                 &email,
+                &link,
                 "Reset your password",
                 format!("Choose a new password here:\n\n{link}\n\nThe link works once, for one hour. If you did not ask for this, ignore this email."),
+                json!({ "name": user.name }),
             )
             .await?;
         }
@@ -649,12 +674,15 @@ impl Service {
             let token = self.new_token("magic", &user.id, ttl).await?;
             let link = self.settings.link(&self.settings.magic_link_url, &token);
             self.send(
+                "auth.magic_link",
                 &email,
+                &link,
                 "Your sign-in link",
                 format!(
                     "Sign in by opening this link:\n\n{link}\n\nIt works once, for {} minutes.",
                     ttl / 60
                 ),
+                json!({ "minutes": ttl / 60 }),
             )
             .await?;
         }

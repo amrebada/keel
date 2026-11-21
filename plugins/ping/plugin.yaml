@@ -1,6 +1,7 @@
 id: ping
 version: 0.1.0
 summary: Example plugin. GET /ping answers with a configurable message and emits ping.received.
+tags: [health, example, test]
 requires:
   host: "^0.1"
   capabilities: [log]

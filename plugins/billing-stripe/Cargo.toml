@@ -1,0 +1,25 @@
+[package]
+name = "keel-plugin-billing-stripe"
+description = "Keel billing-stripe: Stripe subscriptions per tenant with checkout, customer portal, webhooks and a plan guard"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+keel-sdk.workspace = true
+axum.workspace = true
+hmac.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+urlencoding.workspace = true
+
+[dev-dependencies]
+keel-core.workspace = true
+keel-providers.workspace = true
+keel-plugin-auth-core = { path = "../auth-core" }
+keel-plugin-rbac = { path = "../rbac" }
+tokio.workspace = true
+tower.workspace = true
+http-body-util.workspace = true

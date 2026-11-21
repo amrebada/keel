@@ -1,6 +1,7 @@
 id: auth-core
 version: 0.1.0
 summary: Email + password accounts with Argon2id, email verification, password reset, magic links, JWT access + rotating refresh tokens, sessions and logout everywhere.
+tags: [auth, login, signup, password, accounts, users, jwt, sessions, email-verification, magic-link]
 requires:
   host: "^0.1"
   capabilities: [sql, crypto, email, secrets, log]
