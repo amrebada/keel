@@ -12,14 +12,21 @@ pub struct Out {
 impl Out {
     /// Prints `text` for people, or `data` (with `ok: true` added) for `--json`.
     pub fn success(&self, text: impl AsRef<str>, data: Value) {
+        self.report(true, text, data)
+    }
+
+    /// Prints a full result; `ok: false` sends the text to stderr.
+    pub fn report(&self, ok: bool, text: impl AsRef<str>, data: Value) {
         if self.json {
             let mut data = if data.is_object() {
                 data
             } else {
                 json!({ "result": data })
             };
-            data["ok"] = true.into();
+            data["ok"] = ok.into();
             println!("{}", serde_json::to_string(&data).unwrap_or_default());
+        } else if !ok {
+            eprintln!("{}", text.as_ref());
         } else if !text.as_ref().is_empty() {
             println!("{}", text.as_ref());
         }
