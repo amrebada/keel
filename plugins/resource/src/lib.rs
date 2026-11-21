@@ -890,8 +890,8 @@ impl Service {
     async fn list(&self, name: &str, h: &HeaderMap, query: Option<String>) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
-        self.authorize(m, h, Op::Read).await?;
         let access = self.access(m, h).await?;
+        self.authorize(m, h, Op::Read).await?;
         let raw = query.unwrap_or_default();
         let key = self.cache_key(m, &format!("list|{}|{raw}", access.key())).await;
         if let Some(bytes) = self.cached(&key).await {
@@ -1082,8 +1082,8 @@ impl Service {
     async fn get(&self, name: &str, id: &str, h: &HeaderMap) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
-        self.authorize(m, h, Op::Read).await?;
         let access = self.access(m, h).await?;
+        self.authorize(m, h, Op::Read).await?;
         let key = self.cache_key(m, &format!("get|{}|{id}", access.key())).await;
         if let Some(bytes) = self.cached(&key).await {
             return cached_reply(bytes);
@@ -1139,8 +1139,8 @@ impl Service {
     async fn create(&self, name: &str, h: &HeaderMap, bytes: &Bytes) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
-        self.authorize(m, h, Op::Write).await?;
         let access = self.access(m, h).await?;
+        self.authorize(m, h, Op::Write).await?;
         let mut input = Self::body(bytes)?;
         for f in &m.fields {
             if let (false, Some(d)) = (input.contains_key(&f.name), &f.default) {
@@ -1223,8 +1223,8 @@ impl Service {
     async fn update(&self, name: &str, id: &str, h: &HeaderMap, bytes: &Bytes) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
-        self.authorize(m, h, Op::Write).await?;
         let access = self.access(m, h).await?;
+        self.authorize(m, h, Op::Write).await?;
         let input = Self::body(bytes)?;
         validate(&b.update, &Value::Object(input.clone()))?;
         check_dates(m, &input)?;
@@ -1278,8 +1278,8 @@ impl Service {
     async fn delete(&self, name: &str, id: &str, h: &HeaderMap) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
-        self.authorize(m, h, Op::Delete).await?;
         let access = self.access(m, h).await?;
+        self.authorize(m, h, Op::Delete).await?;
         let mut sql = format!("DELETE FROM {} WHERE id = ?", self.table(m));
         let mut params = vec![json!(id)];
         if let Some((c, p)) = access.condition() {
