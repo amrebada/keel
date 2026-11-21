@@ -10,7 +10,7 @@
       "uniqueItems": true,
       "default": [],
       "items": { "enum": ["google", "apple", "facebook", "linkedin", "github", "microsoft", "x"] },
-      "description": "Social sign-in providers; each needs its client id and secret (keel setup lists them). Empty leaves auth-oauth out."
+      "description": "Social sign-in providers. Each needs secrets OAUTH_<PROVIDER>_CLIENT_ID and OAUTH_<PROVIDER>_CLIENT_SECRET (e.g. OAUTH_GOOGLE_CLIENT_ID; Apple uses OAUTH_APPLE_CLIENT_ID, _TEAM_ID, _KEY_ID and _PRIVATE_KEY); keel setup status lists them. Empty leaves auth-oauth out."
     },
     "success_redirect": { "type": "string", "description": "Frontend URL to land on after social sign-in, with tokens in the fragment." },
     "mfa": { "type": "boolean", "default": true, "description": "Include auth-mfa (TOTP two-factor and recovery codes)." },

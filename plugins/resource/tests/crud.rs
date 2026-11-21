@@ -26,6 +26,8 @@ plugins:
         admin: { permissions: ["*"] }
         editor: { permissions: ["projects.*"], inherits: [member] }
         member: { permissions: ["projects.read"] }
+        guest: {}
+      default_role: guest
       admins: [boss@example.com]
   - use: resource
     config:
@@ -42,19 +44,17 @@ plugins:
             meta: { type: json }
         notes:
           scope: owner
+          access: authenticated
           cache_ttl: 60
           fields:
             body: { type: text, required: true }
         tasks:
           scope: tenant
+          access: public
           fields:
             title: { type: string, required: true, unique: true }
 routes:
-  "GET /api/projects": { guard: ["permission:projects.read"] }
-  "GET /api/projects/*": { guard: ["permission:projects.read"] }
-  "POST /api/projects": { guard: ["permission:projects.write"] }
-  "PATCH /api/projects/*": { guard: ["permission:projects.write"] }
-  "DELETE /api/projects/*": { guard: ["permission:projects.delete"] }
+  "POST /api/projects": { guard: ["rate-limit:1000/min"] }
 "#;
 
 struct T(axum::Router);
@@ -171,12 +171,22 @@ async fn crud(db: &str) {
     let t = T::new(db).await;
     let (_, boss) = t.user("boss@example.com").await;
     let (ed_id, ed) = t.user("ed@example.com").await;
-    let (_, mia) = t.user("mia@example.com").await;
+    let (mia_id, mia) = t.user("mia@example.com").await;
+    let (_, zed) = t.user("zed@example.com").await;
     let (s, b) = t
         .call(
             "POST",
             &format!("/rbac/users/{ed_id}/roles"),
             json!({ "role": "editor" }),
+            Some(&boss),
+        )
+        .await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let (s, b) = t
+        .call(
+            "POST",
+            &format!("/rbac/users/{mia_id}/roles"),
+            json!({ "role": "member" }),
             Some(&boss),
         )
         .await;
@@ -197,6 +207,7 @@ async fn crud(db: &str) {
         )
         .await;
     assert_eq!((s, code(&b)), (StatusCode::FORBIDDEN, Some("forbidden")), "{b}");
+    assert_eq!(b["error"]["permission"], "projects.write");
 
     // Create with defaults applied.
     let (s, apollo) = t
@@ -297,6 +308,50 @@ async fn crud(db: &str) {
     let one = format!("/api/projects/{apollo_id}");
     let (s, b) = t.call("GET", &one, Value::Null, Some(&mia)).await;
     assert_eq!((s, b["slug"].as_str()), (StatusCode::OK, Some("apollo")));
+    // Deny by default: no routes: rule, still no access without the permission.
+    for path in [one.as_str(), "/api/projects"] {
+        let (s, b) = t.call("GET", path, Value::Null, Some(&zed)).await;
+        assert_eq!(
+            (s, code(&b)),
+            (StatusCode::FORBIDDEN, Some("forbidden")),
+            "{path}: {b}"
+        );
+        let (s, _) = t.call("GET", path, Value::Null, None).await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED, "{path}");
+    }
+    // Real calendar dates and specific messages for optional fields.
+    let (s, b) = t
+        .call("PATCH", &one, json!({ "due": "2027-13-45" }), Some(&ed))
+        .await;
+    assert_eq!(
+        (s, code(&b)),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed")),
+        "{b}"
+    );
+    assert!(
+        b["error"]["issues"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("month 13"),
+        "{b}"
+    );
+    let (s, b) = t
+        .call(
+            "PATCH",
+            &one,
+            json!({ "status": "gone", "budget": -5 }),
+            Some(&ed),
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let text = b["error"]["issues"].to_string();
+    assert!(
+        text.contains("body.status")
+            && text.contains("body.budget")
+            && !text.contains("anyOf")
+            && !text.contains("not valid under any"),
+        "{text}"
+    );
     let (s, b) = t
         .call(
             "PATCH",

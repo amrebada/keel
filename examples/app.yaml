@@ -34,8 +34,5 @@ plugins:
 routes:
   /admin/**: { guard: [authenticated, "role:admin"] }
   /ping: { guard: ["rate-limit:60/min"] }
-  "GET /api/tasks": { guard: ["permission:tasks.read"] }
-  "GET /api/tasks/*": { guard: ["permission:tasks.read"] }
-  "POST /api/tasks": { guard: ["permission:tasks.write"] }
-  "PATCH /api/tasks/*": { guard: ["permission:tasks.write"] }
-  "DELETE /api/tasks/*": { guard: ["permission:tasks.write"] }
+  # /api/tasks needs tasks.read / tasks.write / tasks.delete by default (resource access: permissions)
+  "POST /api/tasks": { guard: ["rate-limit:60/min"] }

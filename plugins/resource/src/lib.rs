@@ -145,11 +145,36 @@ struct Field {
     spec: Value,
 }
 
+/// Who may call a resource's routes. Deny by default: without `access:`
+/// every route needs a permission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AccessMode {
+    /// `<name>.read` to list and get, `<name>.write` to create and update,
+    /// `<name>.delete` to delete (names configurable); needs auth-core and rbac.
+    Permissions {
+        read: String,
+        write: String,
+        delete: String,
+    },
+    /// Any signed-in user.
+    Authenticated,
+    /// Anyone; only `routes:` rules in app.yaml restrict it.
+    Public,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Op {
+    Read,
+    Write,
+    Delete,
+}
+
 #[derive(Debug, Clone)]
 struct Model {
     name: String,
     fields: Vec<Field>,
     scope: Scope,
+    access: AccessMode,
     manage: String,
     page_size: u64,
     max_page_size: u64,
@@ -227,7 +252,12 @@ impl Model {
             Kind::Json => None,
         };
         if let Some(ty) = ty {
-            p.insert("type".into(), json!(ty));
+            // Optional fields also take null; keeping one schema (not anyOf)
+            // keeps error messages specific.
+            p.insert(
+                "type".into(),
+                if nullable { json!([ty, "null"]) } else { json!(ty) },
+            );
         }
         match f.kind {
             Kind::String => {
@@ -259,18 +289,19 @@ impl Model {
             ("enum", "enum"),
         ] {
             if let Some(v) = s.get(from) {
-                p.insert(to.into(), v.clone());
+                let mut v = v.clone();
+                if let (true, Value::Array(a)) = (nullable && to == "enum", &mut v) {
+                    a.push(Value::Null);
+                }
+                p.insert(to.into(), v);
             }
         }
         let mut schema = Value::Object(p);
         if let Some(pat) = s.get("pattern") {
+            // pattern only applies to strings, so null still passes.
             schema = json!({ "allOf": [schema, { "pattern": pat }] });
         }
-        if nullable {
-            json!({ "anyOf": [schema, { "type": "null" }] })
-        } else {
-            schema
-        }
+        schema
     }
 
     fn body_schema(&self, create: bool) -> Value {
@@ -356,11 +387,38 @@ fn parse_models(config: &Value) -> Result<Vec<Model>, String> {
                 ))
             }
         };
+        let perm = |k: &str| {
+            m.get("permissions")
+                .and_then(|p| p.get(k))
+                .and_then(Value::as_str)
+                .map(String::from)
+                .unwrap_or(format!("{name}.{k}"))
+        };
+        let access = match m.get("access").and_then(Value::as_str).unwrap_or("permissions") {
+            "permissions" => AccessMode::Permissions {
+                read: perm("read"),
+                write: perm("write"),
+                delete: perm("delete"),
+            },
+            "authenticated" => AccessMode::Authenticated,
+            "public" => AccessMode::Public,
+            a => {
+                return Err(format!(
+                    "resources.{name}.access `{a}` must be permissions, authenticated or public"
+                ))
+            }
+        };
+        if access == AccessMode::Public && scope == Scope::Owner {
+            return Err(format!(
+                "resources.{name}: scope owner needs a signed-in user; use access: authenticated or permissions"
+            ));
+        }
         let num = |k: &str, d: u64| m.get(k).and_then(Value::as_u64).unwrap_or(d);
         let model = Model {
             name: name.clone(),
             fields,
             scope,
+            access,
             manage: m
                 .get("manage_permission")
                 .and_then(Value::as_str)
@@ -522,6 +580,66 @@ fn cached_reply(bytes: Vec<u8>) -> Reply {
         .into_response())
 }
 
+fn leap(y: u32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// Checks a `YYYY-MM-DD` prefix is a real calendar day, and for datetimes
+/// that the time and offset are in range. The schema already checked the
+/// shape, so parsing by position is safe.
+fn real_date(kind: Kind, s: &str) -> Result<(), String> {
+    let n = |r: std::ops::Range<usize>| s.get(r).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
+    let (y, mo, d) = (n(0..4), n(5..7), n(8..10));
+    if !(1..=12).contains(&mo) {
+        return Err(format!("`{s}` has month {mo}; months go from 01 to 12"));
+    }
+    let days = match mo {
+        2 if leap(y) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if !(1..=days).contains(&d) {
+        return Err(format!("`{s}` has day {d}; {y}-{mo:02} has {days} days"));
+    }
+    if kind == Kind::Datetime {
+        let (h, mi) = (n(11..13), n(14..16));
+        let sec = if s.get(16..17) == Some(":") { n(17..19) } else { 0 };
+        if h > 23 || mi > 59 || sec > 59 {
+            return Err(format!("`{s}` is not a valid time of day"));
+        }
+        if let Some(i) = s.get(19..).and_then(|t| t.find(['+', '-']).map(|i| i + 19)) {
+            if n(i + 1..i + 3) > 23 || n(i + 4..i + 6) > 59 {
+                return Err(format!("`{s}` has an offset out of range"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_dates(m: &Model, input: &Map<String, Value>) -> Result<(), ApiError> {
+    let issues: Vec<Value> = m
+        .fields
+        .iter()
+        .filter(|f| matches!(f.kind, Kind::Date | Kind::Datetime))
+        .filter_map(|f| {
+            let v = input.get(&f.name)?.as_str()?;
+            real_date(f.kind, v)
+                .err()
+                .map(|msg| json!({ "path": format!("body.{}", f.name), "message": msg }))
+        })
+        .collect();
+    if issues.is_empty() {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "validation_failed",
+        format!("{} problem(s) in the request", issues.len()),
+    )
+    .with("issues", issues))
+}
+
 fn validate(v: &jsonschema::Validator, body: &Value) -> Result<(), ApiError> {
     let issues: Vec<Value> = schema_issues(v, body)
         .into_iter()
@@ -562,6 +680,68 @@ impl Service {
         format!("{}{}", self.ns, m.name)
     }
 
+    /// The signed-in user's id from the bearer token.
+    async fn user_of(&self, m: &Model, h: &HeaderMap) -> Result<String, ApiError> {
+        let identity = self
+            .interfaces
+            .get::<dyn IdentityProvider>(IDENTITY_PROVIDER)
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "needs_auth",
+                    format!(
+                        "`{}` needs signed-in users, which needs the auth-core plugin (or set access: public)",
+                        m.name
+                    ),
+                )
+            })?;
+        let token = bearer(h).ok_or_else(|| {
+            ApiError::unauthorized(
+                "missing_token",
+                "send the access token as `Authorization: Bearer <token>`",
+            )
+        })?;
+        Ok(identity.verify_access_token(token).await?.sub)
+    }
+
+    /// Enforces the resource's `access` mode for one operation.
+    async fn authorize(&self, m: &Model, h: &HeaderMap, op: Op) -> Result<(), ApiError> {
+        let perm = match (&m.access, op) {
+            (AccessMode::Public, _) => return Ok(()),
+            (AccessMode::Authenticated, _) => return self.user_of(m, h).await.map(|_| ()),
+            (AccessMode::Permissions { read, .. }, Op::Read) => read,
+            (AccessMode::Permissions { write, .. }, Op::Write) => write,
+            (AccessMode::Permissions { delete, .. }, Op::Delete) => delete,
+        };
+        let user = self.user_of(m, h).await?;
+        let authz = self
+            .interfaces
+            .get::<dyn Authorizer>(AUTHORIZER)
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "needs_rbac",
+                    format!(
+                        "`{}` checks the `{perm}` permission, which needs the rbac plugin (or set access: authenticated or public)",
+                        m.name
+                    ),
+                )
+            })?;
+        let tenant = h
+            .get(TENANT_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if authz.has_permission(&user, perm, tenant).await? {
+            Ok(())
+        } else {
+            Err(
+                ApiError::forbidden("forbidden", format!("this needs the `{perm}` permission"))
+                    .with("permission", perm.clone()),
+            )
+        }
+    }
+
     async fn access(&self, m: &Model, h: &HeaderMap) -> Result<Access, ApiError> {
         match m.scope {
             Scope::None => Ok(Access::All),
@@ -578,23 +758,7 @@ impl Service {
                     )
                 }),
             Scope::Owner => {
-                let identity = self
-                    .interfaces
-                    .get::<dyn IdentityProvider>(IDENTITY_PROVIDER)
-                    .ok_or_else(|| {
-                        ApiError::new(
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "needs_auth",
-                            format!("`{}` uses scope: owner, which needs the auth-core plugin", m.name),
-                        )
-                    })?;
-                let token = bearer(h).ok_or_else(|| {
-                    ApiError::unauthorized(
-                        "missing_token",
-                        "send the access token as `Authorization: Bearer <token>`",
-                    )
-                })?;
-                let user = identity.verify_access_token(token).await?.sub;
+                let user = self.user_of(m, h).await?;
                 if let Some(authz) = self.interfaces.get::<dyn Authorizer>(AUTHORIZER) {
                     if authz.has_permission(&user, &m.manage, None).await? {
                         return Ok(Access::All);
@@ -701,6 +865,11 @@ impl Service {
                     m.name.clone(),
                     json!({
                         "path": format!("/api/{}", m.name),
+                        "access": match &m.access {
+                            AccessMode::Permissions { read, write, delete } => json!({ "read": read, "write": write, "delete": delete }),
+                            AccessMode::Authenticated => json!("authenticated"),
+                            AccessMode::Public => json!("public"),
+                        },
                         "scope": match m.scope { Scope::None => "none", Scope::Owner => "owner", Scope::Tenant => "tenant" },
                         "fields": m.fields.iter().map(|f| (f.name.clone(), f.spec.clone())).collect::<Map<_, _>>(),
                         "filters": cols.iter().filter(|c| c.2).map(|c| c.0.clone()).collect::<Vec<_>>(),
@@ -721,6 +890,7 @@ impl Service {
     async fn list(&self, name: &str, h: &HeaderMap, query: Option<String>) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
+        self.authorize(m, h, Op::Read).await?;
         let access = self.access(m, h).await?;
         let raw = query.unwrap_or_default();
         let key = self.cache_key(m, &format!("list|{}|{raw}", access.key())).await;
@@ -912,6 +1082,7 @@ impl Service {
     async fn get(&self, name: &str, id: &str, h: &HeaderMap) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
+        self.authorize(m, h, Op::Read).await?;
         let access = self.access(m, h).await?;
         let key = self.cache_key(m, &format!("get|{}|{id}", access.key())).await;
         if let Some(bytes) = self.cached(&key).await {
@@ -968,6 +1139,7 @@ impl Service {
     async fn create(&self, name: &str, h: &HeaderMap, bytes: &Bytes) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
+        self.authorize(m, h, Op::Write).await?;
         let access = self.access(m, h).await?;
         let mut input = Self::body(bytes)?;
         for f in &m.fields {
@@ -976,6 +1148,7 @@ impl Service {
             }
         }
         validate(&b.create, &Value::Object(input.clone()))?;
+        check_dates(m, &input)?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_ms();
         let mut cols = vec!["id".to_string(), "created_at".into(), "updated_at".into()];
@@ -1050,9 +1223,11 @@ impl Service {
     async fn update(&self, name: &str, id: &str, h: &HeaderMap, bytes: &Bytes) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
+        self.authorize(m, h, Op::Write).await?;
         let access = self.access(m, h).await?;
         let input = Self::body(bytes)?;
         validate(&b.update, &Value::Object(input.clone()))?;
+        check_dates(m, &input)?;
         if input.is_empty() {
             return Err(ApiError::bad_request(
                 "empty_update",
@@ -1103,6 +1278,7 @@ impl Service {
     async fn delete(&self, name: &str, id: &str, h: &HeaderMap) -> Reply {
         let b = self.model(name)?;
         let m = &b.model;
+        self.authorize(m, h, Op::Delete).await?;
         let access = self.access(m, h).await?;
         let mut sql = format!("DELETE FROM {} WHERE id = ?", self.table(m));
         let mut params = vec![json!(id)];
@@ -1272,6 +1448,20 @@ mod tests {
         let e =
             models(json!({ "p": { "fields": { "n": { "type": "integer", "default": "x" } } } })).unwrap_err();
         assert!(e.contains("default"), "{e}");
+    }
+
+    #[test]
+    fn calendar_dates() {
+        assert!(real_date(Kind::Date, "2028-02-29").is_ok());
+        assert!(real_date(Kind::Date, "2027-02-29").is_err());
+        assert!(real_date(Kind::Date, "2027-13-45")
+            .unwrap_err()
+            .contains("month 13"));
+        assert!(real_date(Kind::Date, "2027-04-31").is_err());
+        assert!(real_date(Kind::Datetime, "2027-01-31T23:59:59Z").is_ok());
+        assert!(real_date(Kind::Datetime, "2027-01-31T24:00").is_err());
+        assert!(real_date(Kind::Datetime, "2027-01-31T10:00:00+25:00").is_err());
+        assert!(real_date(Kind::Datetime, "2027-01-31T10:00:00.5-05:30").is_ok());
     }
 
     #[test]

@@ -114,16 +114,17 @@ plugins:
         notes:
           scope: owner                 # rows belong to the signed-in user; notes.manage sees all
           cache_ttl: 60
+          access: authenticated        # any signed-in user (default: permissions)
           fields: { body: { type: text, required: true } }
-routes:
-  "GET /api/projects": { guard: ["permission:projects.read"] }
-  "POST /api/projects": { guard: ["permission:projects.write"] }
-  "PATCH /api/projects/*": { guard: ["permission:projects.write"] }
-  "DELETE /api/projects/*": { guard: ["permission:projects.delete"] }
+routes:                                # optional extra rules, e.g. rate limits
+  "POST /api/projects": { guard: ["rate-limit:30/min"] }
 ```
+
+Routes are deny by default. With no `access:` key, listing and reading need `projects.read`, create and update need `projects.write`, and delete needs `projects.delete` (rbac permissions; rename them under `permissions: { read, write, delete }`). Set `access: authenticated` for any signed-in user, or `access: public` to open a resource and rely only on `routes:` rules.
 
 Each resource answers `GET /api/<name>` (list), `POST` (create, `201`), `GET`, `PATCH` and `DELETE /api/<name>/{id}`. `GET /api` describes every resource and its create schema.
 
+- Dates are checked against the calendar (`2027-13-45` is a `422`), and every validation issue names the field and the rule it broke.
 - Field types: `string` (up to 255), `text`, `integer`, `number`, `boolean`, `date`, `datetime`, `json`. Rules: `required`, `default`, `enum`, `min`, `max`, `min_length`, `max_length`, `pattern`, `unique` (`409 conflict` on a duplicate).
 - List queries: `?status=active`, `budget.gte=100`, `.gt`, `.lt`, `.lte`, `.ne`, `name.contains=apo`, `slug.in=a,b`, `due.null=true`, `sort=-created_at,name`, `limit`, `offset`. The answer is `{ items, total, limit, offset }`.
 - Scopes: `owner` (needs auth-core) and `tenant` (rows per `X-Tenant-Id`; unique values are per tenant).
@@ -141,7 +142,7 @@ plugins:
       with: { auth-core: { password_min_length: 12 } }   # any setting of an included plugin
 ```
 
-`keel config expand` prints the four plugins this becomes. Write your own bundle with a `compose:` block in `plugin.yaml` and `keel_sdk::composer!()` as the whole crate.
+`keel config expand` prints the four plugins this becomes. Each social provider needs its OAuth app credentials as secrets named `OAUTH_<PROVIDER>_CLIENT_ID` and `OAUTH_<PROVIDER>_CLIENT_SECRET`, for example `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET` (Apple uses `OAUTH_APPLE_CLIENT_ID`, `OAUTH_APPLE_TEAM_ID`, `OAUTH_APPLE_KEY_ID` and `OAUTH_APPLE_PRIVATE_KEY`). `keel setup status` lists them with steps. Write your own bundle with a `compose:` block in `plugin.yaml` and `keel_sdk::composer!()` as the whole crate.
 
 ## Billing with Stripe
 
