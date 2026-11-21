@@ -1,0 +1,14 @@
+[package]
+name = "keel-plugin-ping"
+description = "Example Keel plugin: GET /ping answers with a configurable message"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+keel-sdk.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

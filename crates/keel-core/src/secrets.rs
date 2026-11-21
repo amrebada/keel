@@ -122,3 +122,15 @@ fn substitute(
     out.push_str(rest);
     out
 }
+
+impl keel_sdk::capabilities::Secrets for EnvSecrets {
+    fn get(&self, name: &str) -> Option<String> {
+        std::env::var(name).ok()
+    }
+}
+
+impl keel_sdk::capabilities::Secrets for MapSecrets {
+    fn get(&self, name: &str) -> Option<String> {
+        self.0.get(name).cloned()
+    }
+}

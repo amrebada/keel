@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use keel_core::{Event, HookBus};
+use keel_sdk::{Event, HookBus};
 use serde_json::json;
 
 #[tokio::test]

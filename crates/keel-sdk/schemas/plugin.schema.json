@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Keel plugin.yaml",
+  "type": "object",
+  "required": ["id", "version", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "version": { "type": "string" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string" },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["sql", "kv", "cache", "http-client", "secrets", "crypto", "log", "email"] }
+        },
+        "plugins": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interfaces": { "type": "array", "items": { "type": "string" } },
+        "routes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^(GET|POST|PUT|PATCH|DELETE) /\\S*$" }
+        },
+        "events": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "consumes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "events": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "config": { "type": "string" },
+    "runtime_config": { "type": "array", "items": { "type": "string" } },
+    "migrations": { "type": "string" },
+    "setup": { "type": "array" }
+  }
+}
