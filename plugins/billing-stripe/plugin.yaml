@@ -1,0 +1,48 @@
+id: billing-stripe
+version: 0.1.0
+summary: Stripe subscriptions per tenant - plans in YAML, Checkout, customer portal, signed webhooks keeping subscription state, and a plan:x route guard.
+requires:
+  host: "^0.1"
+  capabilities: [sql, http-client, secrets, log]
+  plugins:
+    auth-core: "^0.1"
+provides:
+  routes:
+    - GET /billing/plans
+    - GET /billing/subscription
+    - POST /billing/checkout
+    - POST /billing/portal
+    - POST /billing/webhook
+  events: [billing.subscription.updated]
+  interfaces: ["guard:plan"]
+config: config.schema.json
+runtime_config: []
+migrations: built-in
+degrade_level: warn
+setup:
+  - id: stripe-account
+    title: Create a Stripe account and copy the secret API key
+    kind: external-account
+    steps:
+      - "Sign up at https://dashboard.stripe.com/register (test mode needs no business details)"
+      - "Open Developers > API keys and copy the Secret key (sk_test_... while testing)"
+    produces: [secret:STRIPE_SECRET_KEY]
+    verify: { type: plugin-check }
+    blocks: ["POST /billing/checkout", "POST /billing/portal"]
+  - id: stripe-prices
+    title: Create a product and a recurring price for each plan
+    kind: external-account
+    steps:
+      - "Open https://dashboard.stripe.com/products and add a product per plan with a recurring price"
+      - "Copy each price ID (price_...) into config.plans.<plan>.price in app.yaml"
+    verify: { type: plugin-check }
+    blocks: ["POST /billing/checkout"]
+  - id: stripe-webhook
+    title: Send Stripe events to this app
+    kind: webhook
+    steps:
+      - "Deployed: Developers > Webhooks > Add endpoint {config.public_url}/billing/webhook with events checkout.session.completed, customer.subscription.created, customer.subscription.updated, customer.subscription.deleted"
+      - "Local: run `stripe listen --forward-to localhost:8080/billing/webhook`"
+      - "Copy the signing secret (whsec_...)"
+    produces: [secret:STRIPE_WEBHOOK_SECRET]
+    blocks: ["POST /billing/webhook"]

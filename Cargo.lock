@@ -1261,6 +1261,7 @@ dependencies = [
  "keel-plugin-auth-core",
  "keel-plugin-auth-mfa",
  "keel-plugin-auth-oauth",
+ "keel-plugin-billing-stripe",
  "keel-plugin-ping",
  "keel-plugin-rbac",
  "keel-providers",
@@ -1348,6 +1349,26 @@ dependencies = [
  "keel-providers",
  "keel-sdk",
  "p256",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower",
+ "urlencoding",
+]
+
+[[package]]
+name = "keel-plugin-billing-stripe"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hmac",
+ "http-body-util",
+ "keel-core",
+ "keel-plugin-auth-core",
+ "keel-plugin-rbac",
+ "keel-providers",
+ "keel-sdk",
  "serde",
  "serde_json",
  "sha2",

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plans"],
+  "properties": {
+    "plans": {
+      "type": "object",
+      "description": "Plan name to its Stripe price. The plan:<name> guard checks the tenant's active plan.",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["price"],
+        "properties": {
+          "price": { "type": "string", "pattern": "^price_", "description": "Stripe price ID" },
+          "name": { "type": "string" },
+          "includes": { "type": "array", "items": { "type": "string" }, "description": "Other plans this one satisfies in plan:x guards, e.g. team includes pro." }
+        }
+      }
+    },
+    "public_url": { "type": "string", "default": "http://localhost:8080", "description": "Public base URL of this API, for the webhook endpoint." },
+    "success_url": { "type": "string", "default": "http://localhost:3000/billing/success", "description": "Where Checkout sends the browser after paying; {CHECKOUT_SESSION_ID} is filled by Stripe." },
+    "cancel_url": { "type": "string", "default": "http://localhost:3000/billing" },
+    "portal_return_url": { "type": "string", "default": "http://localhost:3000/billing" },
+    "manage_permission": { "type": "string", "default": "billing.manage", "description": "With rbac, the permission needed in a tenant to start checkout or open the portal for it." },
+    "api_base": { "type": "string", "default": "https://api.stripe.com", "description": "Stripe API base URL; tests point it at a mock." }
+  }
+}
