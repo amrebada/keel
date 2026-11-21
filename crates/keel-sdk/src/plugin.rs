@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::async_trait;
 use crate::capabilities::{Capabilities, CapabilityError};
 use crate::hooks::{Event, HookBus};
+use crate::interfaces::Interfaces;
 use crate::manifest::Manifest;
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +25,10 @@ pub enum PluginError {
     Capability(#[from] CapabilityError),
     #[error("live config changes are not supported by this plugin")]
     ConfigureUnsupported,
+    #[error("interface `{0}` is not declared in provides.interfaces of plugin.yaml")]
+    UndeclaredInterface(String),
+    #[error("interface `{0}` is not available; add the plugin that provides it to requires.plugins")]
+    MissingInterface(String),
     #[error("{0}")]
     Other(String),
 }
@@ -78,6 +83,17 @@ pub trait Plugin: Send + Sync + 'static {
     }
 
     fn import_state(&self, _state: Value) {}
+
+    /// Schema migrations for `dialect` (`postgres`, `mysql`, `sqlite`), in
+    /// order. Only plugins that declare the `sql` capability have any.
+    fn migrations(&self, _dialect: &str) -> Vec<crate::Migration> {
+        Vec::new()
+    }
+
+    /// Runs a `plugin-check` setup step. `Err` holds what the user should fix.
+    async fn check_setup(&self, _step_id: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Routes a plugin registers. Only routes declared in `plugin.yaml` are
@@ -169,17 +185,49 @@ pub struct InitContext {
     routes: Routes,
     hooks: Arc<HookBus>,
     events: Vec<String>,
+    provides: Vec<String>,
+    interfaces: Interfaces,
 }
 
 impl InitContext {
-    pub fn new(manifest: &Manifest, config: Value, capabilities: Capabilities, hooks: Arc<HookBus>) -> Self {
+    pub fn new(
+        manifest: &Manifest,
+        config: Value,
+        capabilities: Capabilities,
+        hooks: Arc<HookBus>,
+        interfaces: Interfaces,
+    ) -> Self {
         Self {
             config,
             capabilities,
             routes: Routes::new(manifest),
             hooks,
             events: manifest.events.clone(),
+            provides: manifest.interfaces.clone(),
+            interfaces,
         }
+    }
+
+    /// Offers `value` to other plugins as interface `name`, which must be
+    /// listed in `provides.interfaces`.
+    pub fn provide<T: ?Sized + Send + Sync + 'static>(
+        &mut self,
+        name: &str,
+        value: Arc<T>,
+    ) -> Result<(), PluginError> {
+        if !self.provides.iter().any(|p| p == name) {
+            return Err(PluginError::UndeclaredInterface(name.to_string()));
+        }
+        self.interfaces.insert(name, value);
+        Ok(())
+    }
+
+    /// An interface another plugin provided. That plugin must be in this
+    /// plugin's `requires.plugins` so it starts first.
+    pub fn interface<T: ?Sized + Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, PluginError> {
+        self.interfaces
+            .get::<T>(name)
+            .ok_or_else(|| PluginError::MissingInterface(name.to_string()))
     }
 
     pub fn routes(&mut self) -> &mut Routes {

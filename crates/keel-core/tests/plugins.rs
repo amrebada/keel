@@ -99,7 +99,7 @@ async fn starts_a_compiled_in_plugin_and_serves_its_route() {
     let health: Value = serde_json::from_str(&health).unwrap();
     assert_eq!(
         health["plugins"][0],
-        json!({ "id": "ping", "version": "0.1.0", "status": "ok" })
+        json!({ "id": "ping", "version": "0.1.0", "status": "ok", "degrade_level": "error" })
     );
 }
 

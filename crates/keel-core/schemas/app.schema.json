@@ -55,6 +55,13 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 1000
+            },
+            "degrade_level": {
+              "enum": [
+                "info",
+                "warn",
+                "error"
+              ]
             }
           },
           "allOf": [
@@ -102,6 +109,13 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 1000
+            },
+            "degrade_level": {
+              "enum": [
+                "info",
+                "warn",
+                "error"
+              ]
             }
           },
           "allOf": [
@@ -147,6 +161,13 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 1000
+            },
+            "degrade_level": {
+              "enum": [
+                "info",
+                "warn",
+                "error"
+              ]
             }
           },
           "allOf": [
@@ -167,6 +188,32 @@
               }
             }
           ]
+        },
+        "email": {
+          "type": "object",
+          "required": [
+            "use"
+          ],
+          "additionalProperties": false,
+          "description": "Outgoing email. console prints messages to the log (development). SMTP, Resend and SES arrive in phase 5.",
+          "properties": {
+            "use": {
+              "enum": [
+                "console"
+              ]
+            },
+            "from": {
+              "type": "string",
+              "minLength": 3
+            },
+            "degrade_level": {
+              "enum": [
+                "info",
+                "warn",
+                "error"
+              ]
+            }
+          }
         }
       }
     },
@@ -185,6 +232,13 @@
           },
           "config": {
             "type": "object"
+          },
+          "degrade_level": {
+            "enum": [
+              "info",
+              "warn",
+              "error"
+            ]
           }
         }
       }
@@ -204,6 +258,60 @@
           }
         }
       }
+    },
+    "secrets": {
+      "type": "object",
+      "required": [
+        "use"
+      ],
+      "additionalProperties": false,
+      "description": "Where ${secret:NAME} values come from. env (default): process environment plus .env beside app.yaml. vault: HashiCorp Vault KV v2, read once at start; environment variables still win.",
+      "properties": {
+        "use": {
+          "enum": [
+            "env",
+            "vault"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "description": "Vault address. Defaults to the VAULT_ADDR environment variable."
+        },
+        "token_env": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Environment variable holding the Vault token. Default VAULT_TOKEN."
+        },
+        "mount": {
+          "type": "string",
+          "description": "KV v2 mount. Default secret."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Secret path under the mount, e.g. myapp/prod."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Vault Enterprise namespace."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "use": {
+                "const": "vault"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
     }
   }
 }

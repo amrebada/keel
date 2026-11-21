@@ -198,12 +198,13 @@ pub async fn load(
     hooks: &Arc<HookBus>,
 ) -> Result<Vec<Loaded>, PluginLoadError> {
     let order = check(config, registry, providers)?;
+    let interfaces = keel_sdk::interfaces::Interfaces::new();
     let mut loaded = Vec::new();
     for (i, plugin) in order {
         let m = plugin.manifest();
         let caps = providers.grant(&m.id, &m.capabilities);
         let config = config.plugins[i].config.clone();
-        let mut ctx = InitContext::new(m, config, caps, hooks.clone());
+        let mut ctx = InitContext::new(m, config, caps, hooks.clone(), interfaces.clone());
         if let Err(e) = plugin.init(&mut ctx).await {
             return Err(PluginLoadError(vec![Issue::new(
                 format!("plugins[{i}]"),

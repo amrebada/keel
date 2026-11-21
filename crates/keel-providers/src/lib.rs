@@ -7,23 +7,30 @@
 //! | `db` | `sql` | `postgres`, `mysql`, `sqlite` |
 //! | `cache` | `cache` | `redis`, `memory` |
 //! | `kv` | `kv` | `redis`, `memory` |
+//! | `email` | `email` | `console` |
+//!
+//! `crypto` and `http-client` are always available.
 //!
 //! Plugins never see which one is in use, so switching SQLite for Postgres
 //! is a YAML change.
 
+mod builtin;
 mod memory;
 mod redis_store;
+mod secret_store;
 mod sql;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use keel_core::ProviderConfig;
-use keel_sdk::capabilities::{Capability, CapabilityProviders, ProviderInfo};
+use keel_sdk::capabilities::{Capability, CapabilityProviders, DegradeLevel, ProviderInfo};
 use serde_json::Value;
 
+pub use builtin::{ConsoleEmail, DefaultCrypto, ReqwestClient};
 pub use memory::MemoryStore;
 pub use redis_store::RedisStore;
+pub use secret_store::{secret_source, LayeredSecrets};
 pub use sql::SqlProvider;
 
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +49,7 @@ pub enum ProviderError {
         kind: String,
         message: String,
     },
-    #[error("providers.{0}: unknown slot; use db, cache or kv")]
+    #[error("providers.{0}: unknown slot; use db, cache, kv or email")]
     UnknownSlot(String),
 }
 
@@ -51,7 +58,11 @@ pub enum ProviderError {
 pub async fn connect(
     providers: &BTreeMap<String, ProviderConfig>,
 ) -> Result<CapabilityProviders, ProviderError> {
-    let mut out = CapabilityProviders::default();
+    let mut out = CapabilityProviders {
+        crypto: Some(Arc::new(DefaultCrypto)),
+        http: Some(Arc::new(ReqwestClient::default())),
+        ..Default::default()
+    };
     for (slot, cfg) in providers {
         let kind = cfg.kind.as_str();
         let url = || {
@@ -97,7 +108,7 @@ pub async fn connect(
                     )));
                 }
                 out.sql = Some(Arc::new(p));
-                out.info.push(info(slot, kind, Capability::Sql, false));
+                out.info.push(info(slot, cfg, Capability::Sql, false));
             }
             "cache" | "kv" => {
                 let cap = if slot == "cache" {
@@ -130,7 +141,23 @@ pub async fn connect(
                         })
                     }
                 }
-                out.info.push(info(slot, kind, cap, true));
+                out.info.push(info(slot, cfg, cap, true));
+            }
+            "email" => {
+                if kind != "console" {
+                    return Err(ProviderError::WrongKind {
+                        slot: slot.clone(),
+                        kind: kind.into(),
+                        allowed: "console",
+                    });
+                }
+                let from = cfg
+                    .settings
+                    .get("from")
+                    .and_then(Value::as_str)
+                    .unwrap_or("keel@localhost");
+                out.email = Some(Arc::new(ConsoleEmail::new(from)));
+                out.info.push(info(slot, cfg, Capability::Email, true));
             }
             _ => return Err(ProviderError::UnknownSlot(slot.clone())),
         }
@@ -139,11 +166,17 @@ pub async fn connect(
     Ok(out)
 }
 
-fn info(slot: &str, kind: &str, capability: Capability, hot_load: bool) -> ProviderInfo {
+fn info(slot: &str, cfg: &ProviderConfig, capability: Capability, hot_load: bool) -> ProviderInfo {
     ProviderInfo {
         slot: slot.to_string(),
-        kind: kind.to_string(),
+        kind: cfg.kind.clone(),
         capability,
         hot_load,
+        degrade_level: cfg
+            .settings
+            .get("degrade_level")
+            .and_then(Value::as_str)
+            .and_then(DegradeLevel::parse)
+            .unwrap_or_else(|| DegradeLevel::for_slot(slot)),
     }
 }
