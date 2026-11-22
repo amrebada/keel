@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel · The backend your AI configures</title>
+  <meta name="description" content="Keel is an open-source Rust backend built from plugins. Your AI writes a short app.yaml instead of thousands of lines of boilerplate: auth, roles, CRUD, billing, email and an MCP server, ready to configure.">
+  <meta property="og:title" content="Keel · The backend your AI configures">
+  <meta property="og:description" content="Auth, roles, CRUD, billing and email as plugins. Your AI writes YAML, not boilerplate. 86% fewer generated tokens in our build benchmark.">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#08090b">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="top">
+    <div class="nav__inner">
+      <a class="brand" href="#top" aria-label="Keel home">
+        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true"><use href="#keel-mark"/></svg>
+        <span>keel</span>
+      </a>
+      <nav class="nav__links" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#plugins">Plugins</a>
+        <a href="#benchmark">Benchmark</a>
+        <a href="docs/">Docs</a>
+      </nav>
+      <div class="nav__cta">
+        <a class="btn btn--ghost btn--sm" href="https://github.com/amrebada/keel" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><use href="#gh"/></svg><span class="hide-sm">GitHub</span>
+        </a>
+        <a class="btn btn--primary btn--sm" href="docs/tutorial/">Start the tutorial</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero__bg" aria-hidden="true"></div>
+      <div class="wrap hero__grid">
+        <div class="hero__copy">
+          <h1>Your AI writes <em>YAML.</em><br>Keel runs the backend.</h1>
+          <p class="lead">Keel is an open-source Rust backend built from ready-made plugins, such as sign-in, roles or a CRUD API. Your assistant reads a short manifest, writes a few lines of YAML, and only writes code for what is truly yours.</p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="docs/tutorial/">Build your first app <span aria-hidden="true">→</span></a>
+            <a class="btn btn--ghost" href="docs/">Read the docs</a>
+          </div>
+          <button class="install" type="button" data-copy="cargo install --git https://github.com/amrebada/keel keel" aria-label="Copy install command">
+            <span class="install__prompt">$</span>
+            <code>cargo install --git https://github.com/amrebada/keel keel</code>
+            <span class="install__icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16"><use href="#copy"/></svg>
+            </span>
+          </button>
+        </div>
+
+        <div class="hero__visual">
+          <div class="window" data-tabs>
+            <div class="window__bar">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <div class="tabs" role="tablist" aria-label="Example">
+                <button role="tab" aria-selected="true" aria-controls="tab-yaml" id="t-yaml">example app.yaml</button>
+                <button role="tab" aria-selected="false" aria-controls="tab-term" id="t-term" tabindex="-1">terminal</button>
+              </div>
+              
+            </div>
+<pre class="code" role="tabpanel" id="tab-yaml" aria-labelledby="t-yaml"><code><span class="c"># Example: sign-in, team roles and a tasks API,</span>
+<span class="c"># on Postgres with a Redis cache.</span>
+<span class="k">app</span>: team-tasks
+<span class="k">providers</span>:
+  <span class="k">db</span>:    { <span class="k">use</span>: <span class="s">postgres</span>, <span class="k">url</span>: <span class="v">"${secret:DATABASE_URL}"</span> }
+  <span class="k">cache</span>: { <span class="k">use</span>: <span class="s">redis</span>,    <span class="k">url</span>: <span class="v">"${secret:REDIS_URL}"</span> }
+
+<span class="k">plugins</span>:
+  - <span class="k">use</span>: <span class="s">saas-auth@^1</span>
+    <span class="k">config</span>:
+      <span class="k">social</span>: [<span class="s">google</span>]
+      <span class="k">roles</span>:
+        <span class="k">owner</span>:  { <span class="k">permissions</span>: [<span class="v">"projects.*"</span>] }
+        <span class="k">member</span>: { <span class="k">permissions</span>: [<span class="v">"projects.read"</span>, <span class="v">"tasks.*"</span>] }
+  - <span class="k">use</span>: <span class="s">resource</span>
+    <span class="k">config</span>:
+      <span class="k">resources</span>:
+        <span class="k">tasks</span>:
+          <span class="k">scope</span>: <span class="s">tenant</span>
+          <span class="k">cache_ttl</span>: <span class="n">30</span>
+          <span class="k">fields</span>:
+            <span class="k">title</span>:  { <span class="k">type</span>: <span class="s">string</span>, <span class="k">required</span>: <span class="n">true</span> }
+            <span class="k">status</span>: { <span class="k">type</span>: <span class="s">string</span>, <span class="k">enum</span>: [todo, doing, done] }
+            <span class="k">due</span>:    { <span class="k">type</span>: <span class="s">date</span> }</code></pre>
+<pre class="code" role="tabpanel" id="tab-term" aria-labelledby="t-term" hidden><code><span class="p">$</span> keel setup status
+setup: 2 of 2 done, 0 missing
+  <span class="ok">ok</span>   auth-core/jwt-secret       Create the key that signs login tokens
+  <span class="ok">ok</span>   auth-oauth/google-client   Create a Google OAuth client
+
+<span class="p">$</span> keel migrate --apply
+applied auth-core/001_init
+applied rbac/001_init
+applied resource/tasks_00_table  <span class="c">… 15 migrations</span>
+
+<span class="p">$</span> keel serve
+<span class="c">listening on 127.0.0.1:8080</span>
+
+<span class="p">$</span> curl localhost:8080/health
+{ <span class="v">"status"</span>: <span class="s">"ok"</span>,
+  <span class="v">"plugins"</span>:   { auth-core, auth-oauth, rbac, resource: <span class="ok">ok</span> },
+  <span class="v">"providers"</span>: { postgres, redis, console: <span class="ok">ok</span> },
+  <span class="v">"setup"</span>:     { <span class="v">"complete"</span>: <span class="n">true</span> } }</code></pre>
+          </div>
+          <div class="float float--a" aria-hidden="true">
+            <span class="float__dot"></span> 45 lines of YAML
+          </div>
+          <div class="float float--b" aria-hidden="true">
+            <span class="float__label">vs from scratch</span>
+            <strong>816 lines of Rust</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <ul class="stats" aria-label="Results">
+          <li><strong data-count="86">86</strong><span>fewer output tokens to build the app</span></li>
+          <li><strong data-count="41">41</strong><span>fewer output tokens to change it later</span></li>
+          <li><strong>0</strong><span>failed requests out of 116,710 during live config and binary swaps</span></li>
+          <li><strong>64/64</strong><span>acceptance checks passed on the first run</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section class="section" id="problem">
+      <div class="wrap split">
+        <div>
+          <p class="eyebrow">The problem</p>
+          <h2>Every AI-built backend starts by rewriting the same <em>800 lines.</em></h2>
+        </div>
+        <div class="split__body">
+          <p>Sign-up, password reset, OAuth callbacks, role checks, pagination, Stripe webhooks. Each new project, your assistant generates them again, burns context reading them back, and quietly gets a security detail wrong.</p>
+          <p>Then come the steps no code can do: create the Google OAuth app, paste the Stripe key, add the webhook URL. Nobody tracks them, so the app breaks in production.</p>
+          <p class="strong">Keel turns all of that into tested plugins with a tiny contract an AI can read, and a ledger of every setup step that is still missing.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW -->
+    <section class="section section--tight" id="how">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow">How it works</p>
+          <h2>Describe, configure, run.</h2>
+          <p class="sub">Three steps an assistant can do in a handful of calls, through the CLI or the built-in MCP server.</p>
+        </div>
+        <ol class="steps">
+          <li class="step">
+            <span class="step__n">01</span>
+            <h3>Read the manifest</h3>
+            <p>Each plugin ships a short <code>plugin.yaml</code>: config, routes, events, permissions and setup steps. The AI reads a few lines instead of a codebase.</p>
+<pre class="mini"><span class="p">$</span> keel plugins describe auth-oauth --ai
+auth-oauth 0.1.0: Social login (OAuth2/OIDC)…
+<span class="c">needs:</span>   plugins: auth-core ^0.1
+<span class="c">secrets:</span> OAUTH_GOOGLE_CLIENT_ID, …
+<span class="c">routes:</span>  GET /auth/oauth/{provider}/start, …
+<span class="c">setup steps:</span> 7</pre>
+          </li>
+          <li class="step">
+            <span class="step__n">02</span>
+            <h3>Write app.yaml</h3>
+            <p>It adds plugins and config, validated against each plugin's JSON Schema. Every problem comes back with its exact path.</p>
+<pre class="mini"><span class="p">$</span> keel add auth-oauth
+added auth-oauth@^0.1 to app.yaml
+<span class="p">$</span> keel config validate
+<span class="er">error:</span> 1 problem(s) found
+  - plugins[1].config.password_min_length:
+    4 is less than the minimum of 8</pre>
+          </li>
+          <li class="step">
+            <span class="step__n">03</span>
+            <h3>Track what is left</h3>
+            <p>Keys and console clicks become tracked setup steps. Routes they block answer <code>503 setup_incomplete</code> until they're done.</p>
+<pre class="mini"><span class="p">$</span> keel setup status
+setup: 0 of 1 done, 1 missing
+  <span class="wa">TODO</span> auth-core/jwt-secret
+    1. Generate 32+ random bytes
+    2. Store it as AUTH_JWT_SECRET
+    next: set AUTH_JWT_SECRET</pre>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- FEATURES BENTO -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow">Batteries, as plugins</p>
+          <h2>Everything a SaaS backend needs.<br><span class="dim">Nothing your AI has to regenerate.</span></h2>
+        </div>
+
+        <div class="bento">
+          <article class="card card--wide">
+            <div class="card__text">
+              <h3>Auth that's already right</h3>
+              <p>Email and password with Argon2id, verification, magic links, rotating refresh tokens with reuse detection, TOTP two-factor, and social login on one OAuth2/OIDC engine.</p>
+            </div>
+            <div class="card__demo providers">
+              <span>Google</span><span>Apple</span><span>GitHub</span><span>Microsoft</span><span>LinkedIn</span><span>Facebook</span><span>X</span><span class="hl">Email + MFA</span>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__text">
+              <h3>Roles and guards</h3>
+              <p>Roles with inheritance and per-tenant grants. Put guards and validation in front of any route.</p>
+            </div>
+<pre class="card__code"><span class="k">routes</span>:
+  <span class="v">/admin/**</span>:
+    <span class="k">guard</span>: [authenticated, <span class="s">"role:admin"</span>]
+  <span class="v">"POST /projects"</span>:
+    <span class="k">guard</span>: [<span class="s">"permission:projects.write"</span>,
+            <span class="s">"rate-limit:30/min"</span>]</pre>
+          </article>
+
+          <article class="card">
+            <div class="card__text">
+              <h3>CRUD from a model</h3>
+              <p>Describe fields. Get tables, migrations and REST with filters, sorting, paging, per-owner or per-tenant rows and caching.</p>
+            </div>
+            <div class="card__demo endpoints">
+              <div><b class="m get">GET</b>/api/tasks?status=todo&amp;sort=due</div>
+              <div><b class="m post">POST</b>/api/tasks</div>
+              <div><b class="m patch">PATCH</b>/api/tasks/{id}</div>
+              <div><b class="m del">DELETE</b>/api/tasks/{id}</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__text">
+              <h3>Setup tracker</h3>
+              <p>Every key, console click and webhook a plugin needs, with instructions. Nothing silently missing in production.</p>
+            </div>
+            <ul class="card__demo checklist">
+              <li class="done">Create JWT signing key</li>
+              <li class="done">Create Google OAuth client</li>
+              <li class="todo">Add Stripe webhook endpoint</li>
+              <li class="todo">Verify sending domain</li>
+            </ul>
+          </article>
+
+          
+
+          <article class="card">
+            <div class="card__text">
+              <h3>Swap infrastructure in YAML</h3>
+              <p>SQLite, Postgres or MySQL. Memory or Redis for cache and key-value. Secrets from env, <code>.env</code> or Vault.</p>
+            </div>
+            <div class="card__demo swap">
+              <span class="chip">sqlite</span><span class="arrow">→</span><span class="chip chip--on">postgres</span>
+              <span class="chip">memory</span><span class="arrow">→</span><span class="chip chip--on">redis</span>
+              <span class="chip">.env</span><span class="arrow">→</span><span class="chip chip--on">vault</span>
+            </div>
+          </article>
+
+          <article class="card card--accent">
+            <div class="card__text">
+              <h3>Live operations, zero downtime</h3>
+              <p>Enable, disable and reconfigure plugins on a running server. Swap in a new binary under load, with automatic rollback if health fails. Every change lands in an audit log.</p>
+            </div>
+            <div class="card__demo timeline">
+              <div><time>12:04:11</time><span class="tag">apply</span> billing-stripe enabled</div>
+              <div><time>12:04:12</time><span class="tag">migrate</span> billing_stripe/001_init</div>
+              <div><time>12:09:40</time><span class="tag">swap</span> v1.0.3 → v1.0.4, <b class="ok">0 dropped</b></div>
+              <div><time>12:09:43</time><span class="tag warn">rollback</span> health failed, back to v1.0.3</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__text">
+              <h3>Billing and email</h3>
+              <p>Stripe plans in YAML with Checkout, portal, signed webhooks and a <code>plan:pro</code> guard. Email via SMTP, Resend or SES with templates.</p>
+            </div>
+            <div class="card__demo plans">
+              <div><span>Free</span><b>$0</b></div>
+              <div class="on"><span>Pro</span><b>$12</b></div>
+              <div><span>Team</span><b>$49</b></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__text">
+              <h3>Safe migrations</h3>
+              <p>Plugin migrations are checked first. Drops and renames are blocked unless you allow them by name, and touched tables are backed up.</p>
+            </div>
+<pre class="card__code"><span class="er">blocked</span> resource/tasks_12_drop
+  drops column <span class="s">tasks.assignee</span>
+  allow with <span class="v">--allow resource/tasks_12_drop</span></pre>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- MCP -->
+    <section class="section mcp">
+      <div class="wrap split split--center">
+        <div>
+          <p class="eyebrow">Built for agents</p>
+          <h2>An MCP server in the box.</h2>
+          <p class="sub">Run <code>keel mcp</code> and any MCP client can search plugins, read, validate and apply <code>app.yaml</code>, follow setup steps and read logs, all without a shell.</p>
+          <ul class="tools">
+            <li>search_plugins</li><li>describe_plugin</li><li>add_plugin</li><li>validate_config</li><li>apply_config</li><li>setup_status</li><li>setup_done</li><li>logs</li>
+          </ul>
+          <a class="textlink" href="docs/mcp/">Connect your AI client →</a>
+        </div>
+        <div class="chat" aria-label="Example agent session">
+          <div class="chat__msg chat__msg--user">Add Stripe billing with a Pro plan and protect /reports.</div>
+          <div class="chat__call"><span>search_plugins</span> "payments" → billing-stripe</div>
+          <div class="chat__call"><span>add_plugin</span> billing-stripe { plans: { pro: … } }</div>
+          <div class="chat__call"><span>validate_config</span> → ok</div>
+          <div class="chat__call"><span>apply_config</span> → live, no restart</div>
+          <div class="chat__call"><span>setup_status</span> → 2 steps left</div>
+          <div class="chat__msg chat__msg--ai">Done. <b>/reports</b> now needs <code>plan:pro</code>. Two things only you can do: paste <code>STRIPE_SECRET_KEY</code> and add the webhook URL in Stripe. I've listed both in the setup tracker.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLUGINS -->
+    <section class="section" id="plugins">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow">Plugin catalog</p>
+          <h2>Compiled in. Turned on by one line.</h2>
+          <p class="sub">Plugins are Rust crates with a manifest and a config schema. The host starts only what <code>app.yaml</code> lists, after checking versions, dependencies and route ownership.</p>
+        </div>
+        <div class="catalog">
+          <a class="plugin" href="docs/plugins/auth-core/"><code>auth-core</code><p>Accounts, sessions, tokens, verification, reset, magic links.</p></a>
+          <a class="plugin" href="docs/plugins/auth-oauth/"><code>auth-oauth</code><p>Seven social providers on one OIDC engine, safe account linking.</p></a>
+          <a class="plugin" href="docs/plugins/auth-mfa/"><code>auth-mfa</code><p>TOTP and recovery codes with replay protection and lockout.</p></a>
+          <a class="plugin" href="docs/plugins/rbac/"><code>rbac</code><p>Roles, inheritance, grants and tenant scopes. Powers guards.</p></a>
+          <a class="plugin" href="docs/plugins/resource/"><code>resource</code><p>REST CRUD, migrations and caching from YAML models.</p></a>
+          <a class="plugin" href="docs/plugins/billing-stripe/"><code>billing-stripe</code><p>Plans, Checkout, portal, webhooks and a plan guard.</p></a>
+          <a class="plugin plugin--bundle" href="docs/plugins/saas-auth/"><code>saas-auth</code><span class="badge">bundle</span><p>auth-core, oauth, mfa and rbac from one small config.</p></a>
+          <a class="plugin plugin--new" href="docs/plugins/"><code>your-plugin</code><p>Implement the <code>Plugin</code> trait from <code>keel-sdk</code> and ship a manifest.</p></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENCHMARK -->
+    <section class="section bench" id="benchmark">
+      <div class="wrap">
+        <div class="head">
+          <p class="eyebrow">Benchmark</p>
+          <h2>Same AI. Same spec. <em>A fraction of the tokens.</em></h2>
+          <p class="sub">An assistant built a team task app (email and Google sign-up, per-team roles, protected CRUD on Postgres with Redis) once with Keel and once from scratch, then changed it. Means of three runs per side. All 12 runs passed the same black-box tests.</p>
+        </div>
+
+        <div class="bench__grid">
+          <div class="bench__chart" data-bars>
+            <h3>Output tokens generated</h3>
+            <div class="bar-group">
+              <span class="bar-label">Build</span>
+              <div class="bar"><span class="bar__fill bar__fill--scratch" style="--v:100%"></span><em>23,525 scratch</em></div>
+              <div class="bar"><span class="bar__fill bar__fill--keel" style="--v:13.5%"></span><em>3,187 Keel</em></div>
+            </div>
+            <div class="bar-group">
+              <span class="bar-label">Change</span>
+              <div class="bar"><span class="bar__fill bar__fill--scratch" style="--v:14.1%"></span><em>3,326 scratch</em></div>
+              <div class="bar"><span class="bar__fill bar__fill--keel" style="--v:8.3%"></span><em>1,947 Keel</em></div>
+            </div>
+            <p class="legend"><i class="lg lg--keel"></i>Keel <i class="lg lg--scratch"></i>From scratch</p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th></th><th>Keel</th><th>Scratch</th></tr>
+              </thead>
+              <tbody>
+                <tr><th>What the AI wrote</th><td class="hi">45 lines of YAML</td><td>816 lines of Rust</td></tr>
+                <tr><th>Output tokens, build</th><td class="hi">3,187</td><td>23,525</td></tr>
+                <tr><th>Task context, build</th><td class="hi">22,166</td><td>34,348</td></tr>
+                <tr><th>Wall time, build</th><td class="hi">36 s</td><td>234 s</td></tr>
+                <tr><th>Output tokens, change</th><td class="hi">1,947</td><td>3,326</td></tr>
+              </tbody>
+            </table>
+            <p class="fine">Full method, per-run numbers and caveats in <a href="https://github.com/amrebada/keel/blob/main/examples/team-tasks/RESULTS.md">RESULTS.md</a>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- QUICKSTART -->
+    <section class="section section--tight" id="start">
+      <div class="wrap split split--center">
+        <div>
+          <p class="eyebrow">Quickstart</p>
+          <h2>A running backend in a minute.</h2>
+          <p class="sub">One binary, SQLite and an in-memory cache by default. Move to Postgres and Redis by editing two lines.</p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="docs/tutorial/">Follow the tutorial <span aria-hidden="true">→</span></a>
+            <a class="btn btn--ghost" href="docs/">Browse the docs</a>
+          </div>
+        </div>
+        <div class="window window--plain">
+          <div class="window__bar">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="window__meta">~/shop</span>
+            <button class="copy" type="button" data-copy-target="qs" aria-label="Copy commands"><svg viewBox="0 0 16 16" aria-hidden="true"><use href="#copy"/></svg></button>
+          </div>
+<pre class="code" id="qs"><code><span class="p">$</span> keel init shop &amp;&amp; cd shop
+<span class="p">$</span> keel add saas-auth
+<span class="p">$</span> keel setup status
+<span class="p">$</span> keel dev
+<span class="c">serving 127.0.0.1:8080, reloading on app.yaml changes</span>
+<span class="p">$</span> curl -XPOST localhost:8080/auth/signup \
+    -d '{"email":"a@b.co","password":"correct horse battery"}'</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+      <div class="cta__glow" aria-hidden="true"></div>
+      <div class="wrap cta__inner">
+        <h2>Stop paying tokens<br>for <em>boilerplate.</em></h2>
+        <p>Give your assistant a backend it can configure instead of rewrite.</p>
+        <div class="hero__actions hero__actions--center">
+          <a class="btn btn--primary" href="docs/tutorial/">Start building <span aria-hidden="true">→</span></a>
+          <a class="btn btn--ghost" href="https://github.com/amrebada/keel" rel="noopener"><svg viewBox="0 0 16 16" aria-hidden="true"><use href="#gh"/></svg>Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer__cols">
+        <div class="footer__brand">
+          <a class="brand" href="#top"><svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true"><use href="#keel-mark"/></svg><span>keel</span></a>
+          <p>The pluggable Rust backend your AI configures.</p>
+        </div>
+        <div>
+          <h4>Product</h4>
+          <a href="#how">How it works</a><a href="#features">Features</a><a href="#plugins">Plugins</a><a href="#benchmark">Benchmark</a>
+        </div>
+        <div>
+          <h4>Learn</h4>
+          <a href="docs/">Documentation</a><a href="docs/tutorial/">Tutorial</a><a href="docs/plugins/">Plugin reference</a>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <a href="https://github.com/amrebada/keel" rel="noopener">GitHub</a><a href="https://github.com/amrebada/keel/issues" rel="noopener">Issues</a><a href="https://github.com/amrebada/keel/blob/main/examples/team-tasks" rel="noopener">Example app</a>
+        </div>
+      </div>
+      <div class="wordmark" aria-hidden="true">keel</div>
+      <p class="footer__fine">Open source. Built in Rust.</p>
+    </div>
+  </footer>
+
+  <!-- icons -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="keel-mark" viewBox="0 0 32 32">
+      <path d="M4 11h24l-3.2 7.6A6 6 0 0 1 19.3 22H12.7a6 6 0 0 1-5.5-3.4L4 11Z" fill="currentColor" opacity=".9"/>
+      <path d="M16 22v6.5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      <path d="M16 3.5v5" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+    </symbol>
+    <symbol id="gh" viewBox="0 0 16 16">
+      <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+    </symbol>
+    <symbol id="copy" viewBox="0 0 16 16">
+      <rect x="5" y="5" width="9" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    </symbol>
+  </svg>
+
+  <script src="main.js" defer></script>
+</body>
+</html>
