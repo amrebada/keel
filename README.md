@@ -2,7 +2,9 @@
 
 A pluggable Rust backend that AI assistants configure in YAML instead of regenerating code.
 
-Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An AI reads each plugin's short manifest, writes `app.yaml`, and only writes code for the custom business logic. See the v1 spec for the full design.
+Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An AI reads each plugin's short manifest, writes `app.yaml`, and only writes code for the custom business logic.
+
+**Documentation:** [docs/](docs/src/introduction.md) (published at https://amrebada.github.io/keel/docs/), with a [step-by-step tutorial](docs/src/tutorial/index.md) that builds a full API. Build it locally with `mdbook serve docs`.
 
 ## Status
 

@@ -1,0 +1,25 @@
+[book]
+title = "Keel documentation"
+description = "Keel is a pluggable Rust backend you configure in YAML, so AI assistants write config instead of regenerating code."
+authors = ["Keel contributors"]
+language = "en"
+src = "src"
+
+[build]
+# Served next to the landing page: site/index.html links to docs/.
+build-dir = "../site/docs"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/amrebada/keel"
+edit-url-template = "https://github.com/amrebada/keel/edit/main/docs/{path}"
+site-url = "/keel/docs/"
+default-theme = "light"
+preferred-dark-theme = "navy"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+limit-results = 20
