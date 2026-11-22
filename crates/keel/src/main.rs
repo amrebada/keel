@@ -394,7 +394,14 @@ async fn main() -> ExitCode {
             binary,
             build,
         } => update(out, &config, binary, build).await,
-        Command::Rollback { config } => supervisor_cmd(out, &config, json!({ "cmd": "rollback" })).await,
+        Command::Rollback { config } => {
+            supervisor_cmd(
+                out,
+                &config,
+                json!({ "cmd": "rollback", "actor": live_ops::actor() }),
+            )
+            .await
+        }
         Command::Status { config } => supervisor_cmd(out, &config, json!({ "cmd": "status" })).await,
         Command::NewPlugin { id } => new_plugin(out, &id),
     };
@@ -447,7 +454,12 @@ async fn update(out: Out, config: &Path, binary: Option<PathBuf>, build: bool) -
     };
     let binary =
         std::fs::canonicalize(&binary).with_context(|| format!("{}: not found", binary.display()))?;
-    supervisor_cmd(out, config, json!({ "cmd": "swap", "binary": binary })).await
+    supervisor_cmd(
+        out,
+        config,
+        json!({ "cmd": "swap", "binary": binary, "actor": live_ops::actor() }),
+    )
+    .await
 }
 
 /// `.keel/keel.log` beside app.yaml, appended to; moved to keel.log.1 past 5 MB.

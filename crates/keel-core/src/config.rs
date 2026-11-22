@@ -264,5 +264,70 @@ fn validator() -> &'static jsonschema::Validator {
 
 /// Checks a parsed config against the app schema and returns every problem.
 pub fn validate(value: &Value) -> Vec<Issue> {
-    schema_issues(validator(), value)
+    let mut issues = schema_issues(validator(), value);
+    bad_refs(value, "", &mut issues);
+    issues
+}
+
+/// Strings that look like an env reference Keel does not understand, such
+/// as `${DATABASE_URL}`, `${env:X}` or `$X`; they would otherwise be used
+/// as literal text and fail much later.
+fn bad_refs(value: &Value, path: &str, issues: &mut Vec<Issue>) {
+    let at = |k: &str| {
+        if path.is_empty() {
+            k.to_string()
+        } else {
+            format!("{path}.{k}")
+        }
+    };
+    match value {
+        Value::String(s) => {
+            let name_like = |t: &str| {
+                !t.is_empty()
+                    && t.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '.')
+            };
+            let mut rest = s.as_str();
+            while let Some(i) = rest.find("${") {
+                let after = &rest[i + 2..];
+                let Some(end) = after.find('}') else { break };
+                let inner = &after[..end];
+                if !inner.starts_with("secret:") && name_like(inner) {
+                    let name = inner.rsplit(':').next().unwrap_or(inner);
+                    issues.push(Issue::new(
+                        path,
+                        format!("`${{{inner}}}` is not a Keel reference; write \"${{secret:{name}}}\" to read {name} from the environment, .env or the secret store"),
+                    ));
+                }
+                rest = &after[end + 1..];
+            }
+            if let Some(name) = s.strip_prefix('$') {
+                if !name.is_empty()
+                    && name
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_uppercase() || c == '_')
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                {
+                    issues.push(Issue::new(
+                        path,
+                        format!("`{s}` is not a Keel reference; write \"${{secret:{name}}}\""),
+                    ));
+                }
+            }
+        }
+        Value::Array(a) => {
+            for (i, v) in a.iter().enumerate() {
+                bad_refs(v, &format!("{path}[{i}]"), issues);
+            }
+        }
+        Value::Object(o) => {
+            for (k, v) in o {
+                bad_refs(v, &at(k), issues);
+            }
+        }
+        _ => {}
+    }
 }
