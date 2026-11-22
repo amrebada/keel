@@ -47,7 +47,7 @@
       <div class="wrap hero__grid">
         <div class="hero__copy">
           <h1>Your AI writes <em>YAML.</em><br>Keel runs the backend.</h1>
-          <p class="lead">Keel is an open-source Rust backend made of plugins. Auth, roles, CRUD, billing and email already exist, so your assistant reads a few-line manifest and configures them, and only writes code for what is truly yours.</p>
+          <p class="lead">Keel is an open-source Rust backend built from ready-made plugins, such as sign-in, roles or a CRUD API. Your assistant reads a short manifest, writes a few lines of YAML, and only writes code for what is truly yours.</p>
           <div class="hero__actions">
             <a class="btn btn--primary" href="docs/tutorial/">Build your first app <span aria-hidden="true">→</span></a>
             <a class="btn btn--ghost" href="docs/">Read the docs</a>
@@ -66,13 +66,13 @@
             <div class="window__bar">
               <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <div class="tabs" role="tablist" aria-label="Example">
-                <button role="tab" aria-selected="true" aria-controls="tab-yaml" id="t-yaml">app.yaml</button>
+                <button role="tab" aria-selected="true" aria-controls="tab-yaml" id="t-yaml">example app.yaml</button>
                 <button role="tab" aria-selected="false" aria-controls="tab-term" id="t-term" tabindex="-1">terminal</button>
               </div>
               
             </div>
-<pre class="code" role="tabpanel" id="tab-yaml" aria-labelledby="t-yaml"><code><span class="c"># The whole backend. Sign-up, Google login, team roles,</span>
-<span class="c"># CRUD on Postgres with a Redis cache.</span>
+<pre class="code" role="tabpanel" id="tab-yaml" aria-labelledby="t-yaml"><code><span class="c"># Example: sign-in, team roles and a tasks API,</span>
+<span class="c"># on Postgres with a Redis cache.</span>
 <span class="k">app</span>: team-tasks
 <span class="k">providers</span>:
   <span class="k">db</span>:    { <span class="k">use</span>: <span class="s">postgres</span>, <span class="k">url</span>: <span class="v">"${secret:DATABASE_URL}"</span> }
