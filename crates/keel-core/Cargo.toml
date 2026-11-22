@@ -16,6 +16,7 @@ jsonschema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
+tower.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -23,6 +24,7 @@ urlencoding.workspace = true
 
 
 [dev-dependencies]
+reqwest.workspace = true
 keel-plugin-ping = { path = "../../plugins/ping" }
 keel-providers = { path = "../keel-providers" }
 async-trait.workspace = true

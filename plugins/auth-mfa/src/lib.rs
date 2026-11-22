@@ -13,7 +13,7 @@
 
 mod totp;
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
@@ -364,7 +364,7 @@ impl SecondFactor for Mfa {
 
 #[derive(Default)]
 pub struct AuthMfa {
-    inner: OnceLock<Arc<Mfa>>,
+    inner: keel_sdk::Current<Mfa>,
 }
 
 impl AuthMfa {

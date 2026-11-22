@@ -210,11 +210,16 @@ impl AppConfig {
 
     /// Loads config from YAML text. `file` is only used in error messages.
     pub fn load_str(yaml: &str, file: &str, secrets: &dyn SecretSource) -> Result<Self, ConfigError> {
-        let mut value: Value = serde_yaml::from_str(yaml).map_err(|e| ConfigError::Parse {
+        let value: Value = serde_yaml::from_str(yaml).map_err(|e| ConfigError::Parse {
             file: file.to_string(),
             message: e.to_string(),
         })?;
+        Self::from_value(value, file, secrets)
+    }
 
+    /// Loads config from an already parsed document (secret references still
+    /// in place). `file` is only used in error messages.
+    pub fn from_value(mut value: Value, file: &str, secrets: &dyn SecretSource) -> Result<Self, ConfigError> {
         let issues = validate(&value);
         if !issues.is_empty() {
             return Err(ConfigError::Invalid {

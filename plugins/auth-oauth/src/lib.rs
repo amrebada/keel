@@ -15,7 +15,7 @@ mod apple;
 mod presets;
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Form, Path, Query};
@@ -565,7 +565,7 @@ impl Engine {
 
 #[derive(Default)]
 pub struct AuthOauth {
-    engine: OnceLock<Arc<Engine>>,
+    engine: keel_sdk::Current<Engine>,
 }
 
 impl AuthOauth {

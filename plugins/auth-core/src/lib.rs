@@ -10,7 +10,7 @@ mod jwt;
 mod migrations;
 mod service;
 
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 
 use axum::body::Bytes;
 use axum::extract::Query;
@@ -24,7 +24,7 @@ pub use service::{Service, Settings, JWT_SECRET};
 
 #[derive(Default)]
 pub struct AuthCore {
-    service: OnceLock<Arc<Service>>,
+    service: keel_sdk::Current<Service>,
 }
 
 impl AuthCore {
@@ -34,7 +34,7 @@ impl AuthCore {
 
     /// The running service, after `init`.
     pub fn service(&self) -> Option<Arc<Service>> {
-        self.service.get().cloned()
+        self.service.get()
     }
 }
 

@@ -6,7 +6,7 @@
 //! anything else applies only to requests that send that `X-Tenant-Id`.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
@@ -412,7 +412,7 @@ impl Authorizer for Service {
 
 #[derive(Default)]
 pub struct Rbac {
-    service: OnceLock<Arc<Service>>,
+    service: keel_sdk::Current<Service>,
 }
 
 impl Rbac {

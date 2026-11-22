@@ -6,6 +6,7 @@
 
 pub mod compose;
 pub mod config;
+pub mod live;
 pub mod migrate;
 pub mod plugins;
 pub mod routes;
