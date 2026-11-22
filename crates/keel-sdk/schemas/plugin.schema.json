@@ -199,6 +199,28 @@
         "error"
       ],
       "description": "How much this plugin being down matters to /health. Default error."
+    },
+    "compose": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Makes this a composer: a bundle that expands into these plugin entries in app.yaml. ${config.x} reads the composer's own config; `when: config.x` keeps an entry only when that value is set and not empty; {$keys: <list>, value: ..., overrides: {...}} turns a list of names into a map.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "use"
+        ],
+        "properties": {
+          "use": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*(@.+)?$"
+          },
+          "when": {
+            "type": "string"
+          },
+          "config": {}
+        }
+      }
     }
   }
 }

@@ -88,8 +88,17 @@ fn ai_client_flow() {
         assert!(names.contains(&n.to_string()), "{names:?}");
     }
     let found = &by_id(3)["result"]["structuredContent"]["plugins"];
-    assert_eq!(found.as_array().unwrap().len(), 1, "{found}");
-    assert_eq!(found[0]["id"], "rbac");
+    let ids: Vec<&str> = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["rbac", "saas-auth"],
+        "the rbac plugin and the bundle that includes it"
+    );
     assert_eq!(
         by_id(11)["result"]["structuredContent"]["plugins"][0]["id"],
         "billing-stripe",

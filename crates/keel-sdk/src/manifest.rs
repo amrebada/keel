@@ -38,6 +38,28 @@ pub struct Manifest {
     pub setup: Vec<SetupStep>,
     /// Default `/health` weight; `app.yaml` can override it per plugin.
     pub degrade_level: DegradeLevel,
+    /// Non-empty for a composer: the plugin entries it expands into.
+    pub compose: Vec<ComposeEntry>,
+}
+
+/// One `compose:` entry: a plugin entry template.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ComposeEntry {
+    /// `id` or `id@range`.
+    #[serde(rename = "use")]
+    pub spec: String,
+    /// Path such as `config.social`; the entry is kept only when it is set.
+    #[serde(default)]
+    pub when: Option<String>,
+    /// Config template.
+    #[serde(default)]
+    pub config: Value,
+}
+
+impl ComposeEntry {
+    pub fn id(&self) -> &str {
+        self.spec.split_once('@').map_or(self.spec.as_str(), |(n, _)| n)
+    }
 }
 
 /// A route the plugin declares, e.g. `GET /hello`.
@@ -87,6 +109,8 @@ struct Raw {
     setup: Vec<SetupStep>,
     #[serde(default)]
     degrade_level: DegradeLevel,
+    #[serde(default)]
+    compose: Vec<ComposeEntry>,
 }
 
 #[derive(Deserialize, Default)]
@@ -201,6 +225,34 @@ impl Manifest {
             }
         }
 
+        for (i, c) in raw.compose.iter().enumerate() {
+            if c.id() == raw.id {
+                issues.push(Issue::new(
+                    format!("compose[{i}].use"),
+                    "a composer cannot include itself",
+                ));
+            }
+            if let Some((_, req)) = c.spec.split_once('@') {
+                if let Err(e) = VersionReq::parse(req) {
+                    issues.push(Issue::new(
+                        format!("compose[{i}].use"),
+                        format!("not a version range: {e}"),
+                    ));
+                }
+            }
+        }
+        if !raw.compose.is_empty()
+            && (!raw.provides.routes.is_empty()
+                || !raw.requires.capabilities.is_empty()
+                || !raw.provides.interfaces.is_empty()
+                || raw.migrations.is_some())
+        {
+            issues.push(Issue::new(
+                "compose",
+                "a composer only expands into other plugins; move routes, capabilities, interfaces and migrations to a plugin it includes",
+            ));
+        }
+
         let config_schema = match config_schema {
             None => None,
             Some(text) => {
@@ -234,6 +286,7 @@ impl Manifest {
             migrations: raw.migrations,
             setup: raw.setup,
             degrade_level: raw.degrade_level,
+            compose: raw.compose,
         })
     }
 
@@ -271,6 +324,11 @@ impl Manifest {
             }
         }
         Value::Object(out)
+    }
+
+    /// Whether this is a composer (a bundle of other plugins, no code).
+    pub fn is_composer(&self) -> bool {
+        !self.compose.is_empty()
     }
 
     /// Whether this plugin declares `route`.

@@ -341,6 +341,17 @@ pub async fn plan(
     plugins: &[Arc<dyn Plugin>],
     allow: &[String],
 ) -> Result<Plan, MigrateError> {
+    let with: Vec<(Arc<dyn Plugin>, Value)> = plugins.iter().map(|p| (p.clone(), Value::Null)).collect();
+    plan_with(sql, &with, allow).await
+}
+
+/// [`plan`] for plugins whose migrations depend on their `app.yaml` config
+/// (e.g. `resource` builds tables from YAML models).
+pub async fn plan_with(
+    sql: &dyn Sql,
+    plugins: &[(Arc<dyn Plugin>, Value)],
+    allow: &[String],
+) -> Result<Plan, MigrateError> {
     for t in TRACKING {
         sql.execute(t, &[]).await?;
     }
@@ -356,9 +367,9 @@ pub async fn plan(
         .collect();
     let mut issues = Vec::new();
     let mut out = Plan::default();
-    for plugin in plugins {
+    for (plugin, config) in plugins {
         let m = plugin.manifest();
-        let mut list = plugin.migrations(sql.dialect());
+        let mut list = plugin.migrations_for(sql.dialect(), config);
         if list.is_empty() {
             continue;
         }
@@ -533,7 +544,16 @@ pub async fn audit(
 /// At start: applies additive migrations, refuses to continue past a
 /// destructive one.
 pub async fn run_at_start(sql: &dyn Sql, plugins: &[Arc<dyn Plugin>]) -> Result<Vec<Applied>, MigrateError> {
-    let plan = plan(sql, plugins, &[]).await?;
+    let with: Vec<(Arc<dyn Plugin>, Value)> = plugins.iter().map(|p| (p.clone(), Value::Null)).collect();
+    run_at_start_with(sql, &with).await
+}
+
+/// [`run_at_start`] with each plugin's config.
+pub async fn run_at_start_with(
+    sql: &dyn Sql,
+    plugins: &[(Arc<dyn Plugin>, Value)],
+) -> Result<Vec<Applied>, MigrateError> {
+    let plan = plan_with(sql, plugins, &[]).await?;
     let blocked: Vec<Issue> = plan
         .migrations
         .iter()

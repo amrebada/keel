@@ -1264,6 +1264,8 @@ dependencies = [
  "keel-plugin-billing-stripe",
  "keel-plugin-ping",
  "keel-plugin-rbac",
+ "keel-plugin-resource",
+ "keel-plugin-saas-auth",
  "keel-providers",
  "keel-sdk",
  "reqwest",
@@ -1401,6 +1403,42 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "keel-plugin-resource"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "http-body-util",
+ "jsonschema",
+ "keel-core",
+ "keel-plugin-auth-core",
+ "keel-plugin-rbac",
+ "keel-providers",
+ "keel-sdk",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "keel-plugin-saas-auth"
+version = "0.1.0"
+dependencies = [
+ "keel-core",
+ "keel-plugin-auth-core",
+ "keel-plugin-auth-mfa",
+ "keel-plugin-auth-oauth",
+ "keel-plugin-rbac",
+ "keel-providers",
+ "keel-sdk",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -1,0 +1,30 @@
+id: saas-auth
+version: 1.0.0
+summary: Everything a SaaS app needs to sign users in - accounts, social login, two-factor and roles - from one small config. A bundle of auth-core, auth-oauth, auth-mfa and rbac.
+tags: [bundle, auth, login, signup, oauth, social-login, mfa, 2fa, roles, permissions, saas]
+compose:
+  - use: auth-core@^0.1
+    config:
+      app_url: "${config.app_url}"
+      signup: "${config.signup}"
+      require_verified_email: "${config.require_verified_email}"
+  - use: auth-oauth@^0.1
+    when: config.social
+    config:
+      redirect_base_url: "${config.app_url}"
+      success_redirect: "${config.success_redirect}"
+      providers: { $keys: "${config.social}" }
+  - use: auth-mfa@^0.1
+    when: config.mfa
+    config:
+      issuer: "${config.app_name}"
+  - use: rbac@^0.1
+    config:
+      roles:
+        $keys: "${config.roles}"
+        value: { permissions: [] }
+        overrides: { "${config.admin_role}": { permissions: ["*"] } }
+      default_role: "${config.default_role}"
+      admin_role: "${config.admin_role}"
+      admins: "${config.admins}"
+config: config.schema.json

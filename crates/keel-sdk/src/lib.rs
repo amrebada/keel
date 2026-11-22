@@ -11,6 +11,7 @@
 pub mod auth;
 pub mod authz;
 pub mod capabilities;
+pub mod composer;
 pub mod hooks;
 pub mod http;
 pub mod interfaces;
@@ -25,7 +26,7 @@ pub use capabilities::{Capabilities, Capability, CapabilityError};
 pub use hooks::{Event, HookBus};
 pub use http::ApiError;
 pub use issues::Issue;
-pub use manifest::{Manifest, ManifestError, Route};
+pub use manifest::{ComposeEntry, Manifest, ManifestError, Route};
 pub use migrations::Migration;
 pub use plugin::{Emitter, Health, InitContext, Plugin, PluginError, Routes};
 pub use setup::SetupStep;

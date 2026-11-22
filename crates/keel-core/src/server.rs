@@ -113,13 +113,17 @@ impl Host {
         providers: &CapabilityProviders,
         options: HostOptions,
     ) -> Result<Self, HostError> {
+        let config = crate::compose::expand(&config, registry)?.config;
         let mut host = Self::new(config);
         host.providers = providers.clone();
         host.options = options;
         let order = plugins::check(&host.config, registry, providers)?;
         if let Some(sql) = &providers.sql {
-            let ordered: Vec<Arc<dyn Plugin>> = order.iter().map(|(_, p)| p.clone()).collect();
-            host.migrations = migrate::run_at_start(sql.as_ref(), &ordered).await?;
+            let ordered: Vec<(Arc<dyn Plugin>, Value)> = order
+                .iter()
+                .map(|(i, p)| (p.clone(), host.config.plugins[*i].config.clone()))
+                .collect();
+            host.migrations = migrate::run_at_start_with(sql.as_ref(), &ordered).await?;
         }
         let loaded = plugins::load(&host.config, registry, providers, &host.hooks, &host.interfaces).await?;
         for l in loaded {

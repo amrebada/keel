@@ -8,7 +8,7 @@ use keel_core::migrate::{self, Kind, State};
 use keel_core::setup::{self, SetupReport, SetupState, StepState};
 use keel_sdk::setup::VerifyKind;
 use keel_sdk::Plugin;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::output::Out;
 use crate::{connect, load_checked, plugins};
@@ -151,11 +151,11 @@ pub async fn migrate(out: Out, path: &Path, apply: bool, allow: &[String]) -> Re
     let Some(sql) = providers.sql.clone() else {
         bail!("no database: add providers.db to {}", path.display());
     };
-    let order: Vec<Arc<dyn Plugin>> = keel_core::plugins::check(&config, &registry, &providers)?
+    let order: Vec<(Arc<dyn Plugin>, Value)> = keel_core::plugins::check(&config, &registry, &providers)?
         .into_iter()
-        .map(|(_, p)| p)
+        .map(|(i, p)| (p, config.plugins[i].config.clone()))
         .collect();
-    let mut plan = migrate::plan(sql.as_ref(), &order, allow).await?;
+    let mut plan = migrate::plan_with(sql.as_ref(), &order, allow).await?;
     for a in allow {
         match plan.migrations.iter().find(|m| &m.id == a) {
             None => bail!("`{a}` is not a migration of any configured plugin; see `keel migrate`"),
