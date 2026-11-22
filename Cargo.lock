@@ -1256,6 +1256,7 @@ name = "keel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "keel-core",
  "keel-plugin-auth-core",
@@ -1268,12 +1269,15 @@ dependencies = [
  "keel-plugin-saas-auth",
  "keel-providers",
  "keel-sdk",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "tempfile",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -1288,6 +1292,7 @@ dependencies = [
  "keel-plugin-ping",
  "keel-providers",
  "keel-sdk",
+ "reqwest",
  "semver",
  "serde",
  "serde_json",

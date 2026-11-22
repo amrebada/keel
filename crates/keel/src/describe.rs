@@ -15,6 +15,38 @@ pub fn ai_summary(m: &Manifest) -> String {
         join_or_none(&caps),
         join_or_none(&deps)
     ));
+    let providers: Vec<String> = m
+        .capabilities
+        .iter()
+        .filter_map(|c| provider_hint(c.as_str()))
+        .collect();
+    if !providers.is_empty() {
+        s.push_str(&format!("app.yaml providers: {}\n", providers.join("; ")));
+    }
+    s.push_str("secrets in config: write \"${secret:NAME}\" (from env or .env beside app.yaml)\n");
+    let reads: Vec<String> = m
+        .setup
+        .iter()
+        .filter_map(|st| {
+            let names: Vec<&str> = st
+                .produces
+                .iter()
+                .filter_map(|p| p.strip_prefix("secret:"))
+                .collect();
+            if names.is_empty() {
+                return None;
+            }
+            let when = st
+                .when
+                .as_deref()
+                .map(|w| format!(" (when {})", w.trim_start_matches("config.")))
+                .unwrap_or_default();
+            Some(format!("{}{when}", names.join(", ")))
+        })
+        .collect();
+    if !reads.is_empty() {
+        s.push_str(&format!("secrets it reads: {}\n", reads.join("; ")));
+    }
     let keys = config_keys(m);
     if keys.is_empty() {
         s.push_str("config: none\n");
@@ -60,6 +92,18 @@ pub fn ai_summary(m: &Manifest) -> String {
     s
 }
 
+/// Which `providers:` entry a capability needs, with the accepted `use:` values.
+fn provider_hint(cap: &str) -> Option<String> {
+    let (key, uses) = match cap {
+        "sql" => ("db", "postgres|mysql|sqlite, url"),
+        "cache" => ("cache", "redis|memory"),
+        "kv" => ("kv", "redis|memory"),
+        "email" => ("email", "console|smtp|resend|ses"),
+        _ => return None,
+    };
+    Some(format!("{key} (use: {uses})"))
+}
+
 fn caret(m: &Manifest) -> String {
     if m.version.major > 0 {
         m.version.major.to_string()
@@ -76,24 +120,44 @@ fn join_or_none<S: AsRef<str>>(items: &[S]) -> String {
     }
 }
 
-/// One line per top-level config key: `name: type, required, default x (live)`.
+/// One line per config key: `name: type, required, default x (live)`.
+/// Nested objects, maps and list items are indented under their key, so an
+/// agent sees the whole shape without the JSON schema.
 fn config_keys(m: &Manifest) -> Vec<String> {
     let Some(schema) = &m.config_schema else {
         return vec![];
     };
+    let mut out = Vec::new();
+    walk(m, schema, "", 0, &mut out);
+    out
+}
+
+fn walk(m: &Manifest, schema: &Value, prefix: &str, depth: usize, out: &mut Vec<String>) {
+    let indent = "  ".repeat(depth);
     let required: Vec<&str> = schema["required"]
         .as_array()
         .map(|a| a.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
-    let Some(props) = schema["properties"].as_object() else {
-        return vec![];
-    };
-    props
-        .iter()
-        .map(|(name, p)| {
+    if let Some(props) = schema["properties"].as_object() {
+        for (name, p) in props {
+            let path = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}.{name}")
+            };
             let mut parts = vec![type_of(p)];
             if required.contains(&name.as_str()) {
                 parts.push("required".into());
+            }
+            for (k, label) in [
+                ("minimum", "min"),
+                ("maximum", "max"),
+                ("minLength", "min length"),
+                ("maxLength", "max length"),
+            ] {
+                if let Some(v) = p.get(k) {
+                    parts.push(format!("{label} {v}"));
+                }
             }
             if let Some(d) = p.get("default") {
                 parts.push(format!("default {d}"));
@@ -104,15 +168,29 @@ fn config_keys(m: &Manifest) -> Vec<String> {
             let live = if m
                 .runtime_config
                 .iter()
-                .any(|k| k == name || k.starts_with(&format!("{name}.")))
+                .any(|k| *k == path || k.starts_with(&format!("{path}.")))
             {
                 " (live)"
             } else {
                 ""
             };
-            format!("{name}: {}{live}", parts.join(", "))
-        })
-        .collect()
+            out.push(format!("{indent}{name}: {}{live}", parts.join(", ")));
+            if depth < 5 {
+                walk(m, p, &path, depth + 1, out);
+            }
+        }
+    }
+    if depth >= 5 {
+        return;
+    }
+    if let Some(extra) = schema.get("additionalProperties").filter(|v| v.is_object()) {
+        out.push(format!("{indent}<any name>: {}", type_of(extra)));
+        walk(m, extra, &format!("{prefix}.*"), depth + 1, out);
+    }
+    if let Some(items) = schema.get("items").filter(|v| v["properties"].is_object()) {
+        out.push(format!("{indent}- each item:"));
+        walk(m, items, prefix, depth + 1, out);
+    }
 }
 
 fn type_of(p: &Value) -> String {

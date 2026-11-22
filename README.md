@@ -6,7 +6,7 @@ Common backend features (auth, roles, CRUD, billing, email) ship as plugins. An 
 
 ## Status
 
-Phase 6 of 8 (CRUD resources and bundles) is done:
+Phase 7 of 8 (live operations) is done:
 
 - **Host core (phase 1):** loads and validates `app.yaml`, resolves `${secret:NAME}` from environment variables, runs an event hook bus, serves `/health`.
 - **Plugin contract (phase 2):** plugins are Rust crates compiled into the binary. Each has a `plugin.yaml` manifest, a `config.schema.json`, and a type implementing the `Plugin` trait from `keel-sdk`. The host starts only the plugins `app.yaml` lists, after checking versions, dependencies, capabilities, config and route ownership.
@@ -20,6 +20,7 @@ Phase 6 of 8 (CRUD resources and bundles) is done:
 - **Business plugins (phase 5):** `billing-stripe` (plans in YAML, Checkout, customer portal, signed webhooks, subscription state per tenant, `plan:x` guard). Email goes through `console`, `smtp`, `resend` or `ses`, with templates in `app.yaml`.
 - **MCP (phase 5):** `keel mcp` lets an AI client search plugins, read, validate and apply `app.yaml`, follow setup steps and read logs without a shell.
 - **CRUD resources (phase 6):** the `resource` plugin turns models in `app.yaml` into tables, migrations and REST endpoints with validation, filters, sorting, paging, per-owner or per-tenant rows and optional caching. Guard them with `routes:` like any other route.
+- **Live operations (phase 7):** enable, disable and reconfigure plugins on a running server with no restart (`keel apply`, `keel plugins enable|disable|set`, the `/_admin` API), with every change in an audit log. `keel supervise` swaps in a new binary under load with zero dropped requests and rolls back automatically when health fails.
 - **Bundles (phase 6):** a composer plugin has no code; its manifest expands into other plugins. `saas-auth` brings auth-core, auth-oauth, auth-mfa and rbac with one small config. `keel config expand` shows the result.
 
 ## Try it
@@ -144,6 +145,37 @@ plugins:
 
 `keel config expand` prints the four plugins this becomes. Each social provider needs its OAuth app credentials as secrets named `OAUTH_<PROVIDER>_CLIENT_ID` and `OAUTH_<PROVIDER>_CLIENT_SECRET`, for example `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET` (Apple uses `OAUTH_APPLE_CLIENT_ID`, `OAUTH_APPLE_TEAM_ID`, `OAUTH_APPLE_KEY_ID` and `OAUTH_APPLE_PRIVATE_KEY`). `keel setup status` lists them with steps. Write your own bundle with a `compose:` block in `plugin.yaml` and `keel_sdk::composer!()` as the whole crate.
 
+## Live changes and zero-downtime updates
+
+Set an admin token (env or `.env`), start the server, and change it while it runs:
+
+```sh
+echo "KEEL_ADMIN_TOKEN=$(openssl rand -hex 24)" >> .env
+keel serve &                          # or: keel supervise (see below)
+keel plugins enable ping --with '{ message: hi }'   # starts it, no restart
+keel plugins set ping message=hello   # runtime_config keys change in place
+keel plugins disable ping
+# edit app.yaml, then reconcile the running server with it:
+keel apply
+keel config pull --write              # write live changes back to app.yaml
+keel audit                            # who changed what, when (config changes, binary swaps and rollbacks)
+```
+
+A change builds a new set of plugins next to the running one and switches requests over once it has started; in-flight requests finish on the old one. A change that fails validation, a dependency check or a migration leaves the server as it was. Providers, `server` and `secrets` need a binary swap or restart. `keel dev` uses the same mechanism, so saving app.yaml applies it live.
+
+Admin API (bearer `KEEL_ADMIN_TOKEN`): `GET|PUT /_admin/config`, `GET|POST /_admin/plugins`, `PUT|DELETE /_admin/plugins/{id}`, `PATCH /_admin/plugins/{id}/config`, `GET /_admin/setup`, `GET /_admin/audit`, `GET /_admin/stats`.
+
+New plugin code ships as a new binary:
+
+```sh
+keel supervise                        # owns the port, runs `keel serve` as a child
+keel update --binary ./target/release/keel   # or --build
+keel status                           # running and previous binary
+keel rollback                         # back to the previous binary
+```
+
+`keel update` hashes the binary and keeps a copy in `.keel/bin/`, runs `config validate` and additive `migrate --apply` with it, starts it on the shared socket, waits for a healthy `/health`, then lets the old process finish its requests and exit. For 60 seconds (`--watch-secs`) a failing health check, a crash or an error rate over 50% swaps back to the previous binary. Swaps and rollbacks are logged in `.keel/swaps.jsonl`. Unix only.
+
 ## Billing with Stripe
 
 ```yaml
@@ -172,6 +204,27 @@ providers:
 ```
 
 Plugins send with a template id (`auth.verify`, `auth.reset`, `auth.magic_link`); a template in `app.yaml` replaces the subject, text or html it sets. A real provider adds a `providers/email-domain` setup step for SPF and DKIM.
+
+## The success test: team tasks
+
+[examples/team-tasks](examples/team-tasks) is the v1 success test. It is a
+team task API with email and Google sign-in, per-team roles, and protected
+CRUD on Postgres with a Redis cache, written in 45 lines of YAML.
+
+An AI did two tasks, three times each way, once through Keel's MCP server
+and once from scratch in Rust:
+- built the app;
+- made a follow-up change (a new field, a new role and a new resource) to a
+  running app.
+
+Every run passed the same acceptance tests. Compared with from scratch, Keel
+used **86% fewer output tokens for the build** and **41% fewer for the
+change**.
+
+[RESULTS.md](examples/team-tasks/RESULTS.md) has the method and the caveats.
+`crates/keel/tests/team_tasks.rs` runs the same app under `keel supervise`
+and makes a live change and a binary swap under load, with no failed
+requests.
 
 ## Connect an AI client (MCP)
 
@@ -227,10 +280,10 @@ error: app.yaml: 3 problem(s) found
 | --- | --- |
 | `crates/keel-sdk` | What plugins depend on: `Plugin` trait, manifest format, capability traits, hook bus |
 | `crates/keel-sdk/schemas/plugin.schema.json` | JSON Schema for `plugin.yaml` |
-| `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host, route guards and validation, setup tracking, migration planner |
+| `crates/keel-core` | Host library: config loader, secrets, plugin loading, HTTP host, route guards and validation, setup tracking, migration planner, live changes and admin API |
 | `crates/keel-core/schemas/app.schema.json` | JSON Schema for `app.yaml` |
 | `crates/keel-providers` | SQL (sqlx), Redis, in-memory, crypto, HTTP, email (console, SMTP, Resend, SES) and Vault providers |
-| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `check`, `add`, `config`, `plugins`, `new-plugin`, `setup`, `migrate`, `mcp`) |
+| `crates/keel` | The `keel` binary (`init`, `dev`, `serve`, `supervise`, `update`, `rollback`, `apply`, `audit`, `check`, `add`, `config`, `plugins`, `new-plugin`, `setup`, `migrate`, `mcp`) |
 | `plugins/` | Compiled-in plugins (`saas-auth` is a bundle with no code) |
 | `examples/app.yaml` | Sample config |
 

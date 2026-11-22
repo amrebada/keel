@@ -1,0 +1,53 @@
+# Team Tasks: the v1 success-test app, built from YAML only.
+# Sign-up with email and Google, roles per team, protected CRUD on Postgres
+# with a Redis cache. See SPEC.md for the requirements and acceptance.py for
+# the black-box test.
+app: team-tasks
+server: { host: 127.0.0.1, port: 8080 }
+
+providers:
+  db: { use: postgres, url: "${secret:DATABASE_URL}" }
+  cache: { use: redis, url: "${secret:REDIS_URL}" }
+  email: { use: console, from: "Team Tasks <noreply@localhost>" }
+
+plugins:
+  - use: saas-auth@^1
+    config:
+      app_url: "${secret:PUBLIC_URL}"
+      social: [google]
+      mfa: false
+      require_verified_email: false
+      admins: [boss@example.com]
+      roles:
+        admin: { permissions: ["*"] }
+        owner: { permissions: ["projects.*", "tasks.*", "rbac.manage"], inherits: [member] }
+        member: { permissions: ["projects.read", "tasks.read", "tasks.write"] }
+      with:
+        rbac: { default_role: null }
+        auth-oauth:
+          providers:
+            google:
+              auth_url: "${secret:GOOGLE_AUTH_URL}"
+              token_url: "${secret:GOOGLE_TOKEN_URL}"
+              userinfo_url: "${secret:GOOGLE_USERINFO_URL}"
+  - use: resource
+    config:
+      resources:
+        projects:
+          scope: tenant
+          cache_ttl: 30
+          fields:
+            name: { type: string, required: true, min_length: 1, max_length: 80 }
+            description: { type: text }
+        tasks:
+          scope: tenant
+          cache_ttl: 30
+          fields:
+            title: { type: string, required: true, min_length: 1, max_length: 200 }
+            status: { type: string, enum: [todo, doing, done], default: todo }
+            due: { type: date }
+            assignee: { type: string }
+            project_id: { type: string }
+
+routes:
+  "POST /api/*": { guard: ["rate-limit:600/min"] }

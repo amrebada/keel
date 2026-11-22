@@ -108,3 +108,32 @@ fn example_config_is_valid() {
     .unwrap();
     assert_eq!(c.app, "team-tasks");
 }
+
+#[test]
+fn unknown_env_references_are_flagged() {
+    let v: serde_json::Value = serde_yaml::from_str(
+        "app: x\nproviders:\n  cache: { use: redis, url: \"${REDIS_URL}\" }\n  db: { use: postgres, url: \"$DATABASE_URL\" }\n  email: { use: console, from: \"${env:FROM}\" }\nplugins:\n  - use: ping\n    config: { message: \"${secret:MSG} and $5\" }\n",
+    )
+    .unwrap();
+    let issues = keel_core::config::validate(&v);
+    let text: Vec<String> = issues
+        .iter()
+        .map(|i| format!("{}: {}", i.path, i.message))
+        .collect();
+    assert_eq!(issues.len(), 3, "{text:#?}");
+    assert!(
+        text.iter()
+            .any(|t| t.starts_with("providers.cache.url") && t.contains("${secret:REDIS_URL}")),
+        "{text:#?}"
+    );
+    assert!(
+        text.iter()
+            .any(|t| t.starts_with("providers.db.url") && t.contains("${secret:DATABASE_URL}")),
+        "{text:#?}"
+    );
+    assert!(
+        text.iter()
+            .any(|t| t.starts_with("providers.email.from") && t.contains("${secret:FROM}")),
+        "{text:#?}"
+    );
+}

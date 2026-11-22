@@ -6,7 +6,7 @@
 //! and the `plan:<name>` guard reads it.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
@@ -618,7 +618,7 @@ impl GuardCheck for PlanGuard {
 
 #[derive(Default)]
 pub struct BillingStripe {
-    service: OnceLock<Arc<Service>>,
+    service: keel_sdk::Current<Service>,
 }
 
 impl BillingStripe {

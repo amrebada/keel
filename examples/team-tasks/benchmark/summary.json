@@ -1,0 +1,132 @@
+[
+ {
+  "run": "kb1",
+  "kind": "build",
+  "side": "keel (phase-7 binary)",
+  "calls": 18,
+  "output": 6830,
+  "first_context": 51337,
+  "final_context": 89549,
+  "task_context": 38212
+ },
+ {
+  "run": "kb2",
+  "kind": "build",
+  "side": "keel",
+  "calls": 9,
+  "output": 3547,
+  "first_context": 51351,
+  "final_context": 70096,
+  "task_context": 18745
+ },
+ {
+  "run": "sb1",
+  "kind": "build",
+  "side": "scratch",
+  "calls": 14,
+  "output": 21507,
+  "first_context": 51217,
+  "final_context": 82764,
+  "task_context": 31547
+ },
+ {
+  "run": "kb3",
+  "kind": "build",
+  "side": "keel",
+  "calls": 10,
+  "output": 2817,
+  "first_context": 51342,
+  "final_context": 74744,
+  "task_context": 23402
+ },
+ {
+  "run": "kb4",
+  "kind": "build",
+  "side": "keel",
+  "calls": 11,
+  "output": 3196,
+  "first_context": 51342,
+  "final_context": 75694,
+  "task_context": 24352
+ },
+ {
+  "run": "sb2",
+  "kind": "build",
+  "side": "scratch",
+  "calls": 15,
+  "output": 29238,
+  "first_context": 51236,
+  "final_context": 91269,
+  "task_context": 40033
+ },
+ {
+  "run": "sb3",
+  "kind": "build",
+  "side": "scratch",
+  "calls": 17,
+  "output": 19829,
+  "first_context": 51236,
+  "final_context": 82701,
+  "task_context": 31465
+ },
+ {
+  "run": "kc1",
+  "kind": "change",
+  "side": "keel",
+  "calls": 9,
+  "output": 2066,
+  "first_context": 51267,
+  "final_context": 66137,
+  "task_context": 14870
+ },
+ {
+  "run": "kc2",
+  "kind": "change",
+  "side": "keel",
+  "calls": 7,
+  "output": 1682,
+  "first_context": 51267,
+  "final_context": 64351,
+  "task_context": 13084
+ },
+ {
+  "run": "kc3",
+  "kind": "change",
+  "side": "keel",
+  "calls": 9,
+  "output": 2092,
+  "first_context": 51267,
+  "final_context": 64694,
+  "task_context": 13427
+ },
+ {
+  "run": "sc1",
+  "kind": "change",
+  "side": "scratch",
+  "calls": 7,
+  "output": 3498,
+  "first_context": 51179,
+  "final_context": 77919,
+  "task_context": 26740
+ },
+ {
+  "run": "sc2",
+  "kind": "change",
+  "side": "scratch",
+  "calls": 6,
+  "output": 2977,
+  "first_context": 51163,
+  "final_context": 77594,
+  "task_context": 26431
+ },
+ {
+  "run": "sc3",
+  "kind": "change",
+  "side": "scratch",
+  "calls": 9,
+  "output": 3502,
+  "first_context": 51163,
+  "final_context": 72364,
+  "task_context": 21201
+ }
+]
