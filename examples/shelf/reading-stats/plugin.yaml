@@ -1,0 +1,18 @@
+# What this plugin is and what it needs. An AI reads this file, not the code.
+id: reading-stats
+version: 0.1.0
+summary: Counts books added and finished on the shelf, and reports progress toward a reading goal.
+tags: [stats, reading, example]
+requires:
+  host: "^0.1"
+  capabilities: [kv, log]
+  plugins:
+    resource: "^0.1"
+provides:
+  routes:
+    - GET /stats
+  events: [stats.goal.reached]
+consumes:
+  events: [resource.created, resource.updated]
+config: config.schema.json
+runtime_config: [goal]

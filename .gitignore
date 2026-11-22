@@ -1,2 +1,5 @@
 /target
 .env
+
+# Built docs (mdBook output, see docs/book.toml)
+/site/docs

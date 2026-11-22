@@ -1,0 +1,57 @@
+name: Pages
+
+# Builds the docs (mdBook, docs/) into site/docs and publishes site/
+# (the landing page plus the docs) to GitHub Pages.
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "site/**", ".github/workflows/pages.yml"]
+  pull_request:
+    paths: ["docs/**", "site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  MDBOOK_VERSION: "0.4.40"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mdBook
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build the docs into site/docs
+        run: mdbook build docs
+      - name: Fall back to the docs when there is no landing page
+        run: |
+          if [ ! -f site/index.html ]; then
+            printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=docs/"><title>Keel</title><a href="docs/">Keel documentation</a>\n' > site/index.html
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

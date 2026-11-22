@@ -1,0 +1,10 @@
+[package]
+name = "keel-plugin-reading-stats"
+description = "Keel plugin `reading-stats`"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+keel-sdk.workspace = true

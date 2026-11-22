@@ -1,0 +1,52 @@
+# Shelf: the reading-list API built in the docs tutorial (docs/src/tutorial).
+# reading-stats is not compiled into keel by default. Build it in as in
+# tutorial step 7, or drop the `reading-stats` entry below.
+app: shelf
+server:
+  host: 127.0.0.1
+  port: 8080
+
+providers:
+  db: { use: postgres, url: "${secret:DATABASE_URL}" }
+  cache: { use: redis, url: "${secret:REDIS_URL}" }
+  kv: { use: redis, url: "${secret:REDIS_URL}", prefix: "kv:" }
+  email: { use: console, from: "shelf <noreply@localhost>" }
+
+plugins:
+  - use: ping@^0.1
+  - use: auth-core@^0.1
+  - use: rbac
+    config:
+      roles:
+        admin: { permissions: ["*"] }
+        librarian: { permissions: ["books.*"], inherits: [reader] }
+        reader: { permissions: ["books.read"] }
+      default_role: reader
+      admins: [ada@example.com]
+  - use: resource
+    config:
+      resources:
+        books:
+          fields:
+            title: { type: string, required: true, max_length: 200 }
+            author: { type: string, required: true }
+            isbn: { type: string, unique: true, pattern: "^[0-9-]{10,17}$" }
+            status: { type: string, enum: [want, reading, done], default: want }
+            pages: { type: integer, min: 1 }
+            finished_on: { type: date }
+        notes:
+          scope: owner
+          access: authenticated
+          fields:
+            book_id: { type: string, required: true }
+            body: { type: text, required: true }
+  - use: reading-stats@^0.1
+
+routes:
+  "POST /api/books":
+    guard: ["rate-limit:3/min"]
+  "DELETE /api/books/{id}":
+    guard: ["role:admin"]
+  "GET /api/books":
+    validate:
+      query: { type: object, properties: { limit: { type: integer, maximum: 50 } } }
